@@ -6,6 +6,7 @@ import importlib
 
 node_list = [
     "foder_util",
+    "model_util",
 ]
 
 NODE_CLASS_MAPPINGS = {}
