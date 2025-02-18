@@ -1,22 +1,8 @@
 import folder_paths
 import json
+import comfy.samplers
 
-
-def GetModelJsonFormLiteral(literal):
-    # literal = "\n".join(folder_paths.get_filename_list(literal))
-    literal = folder_paths.get_filename_list(literal)
-    # # 分割并过滤空行
-    # split = list(filter(None, literal.split("\n")))
-    # # 转换为包含name字段的字典列表
-    # json_list = [{"name": item.strip()} for item in split if item.strip()]
-    # # 序列化为JSON字符串
-    # json_str = json.dumps(json_list, indent=2)
-
-    # literal = folder_paths.get_filename_list(literal)
-    # literal = json.dumps(literal)
-    return literal
-
-class ModelTypeJsonLiteral:
+class ParameterTypeJsonLiteral:
     def __init__(self):
         pass
 
@@ -24,14 +10,14 @@ class ModelTypeJsonLiteral:
     def INPUT_TYPES(s):
         return {
             "required": {
-                "modelType": ("STRING", {
-                    "default": "checkpoints"
+                "type": ("STRING", {
+                    "default": "sampler"
                 }),
             },
         }
 
     RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("json",)
+    RETURN_NAMES = ("list",)
     FUNCTION = "parse_literal"
 
     CATEGORY = "CommonExtension/model"
@@ -40,17 +26,22 @@ class ModelTypeJsonLiteral:
     def IS_CHANGED(cls, **kwargs):
         return float("NaN")
     
-    def parse_literal(self, modelType):
-        # 序列化为JSON字符串
-        json_str = GetModelJsonFormLiteral(modelType)
-        return (json_str,)
+    def parse_literal(self, type):
+        if type == "test":
+            return ("",)
+        elif type == "sampler":
+            return (comfy.samplers.KSampler.SAMPLERS,)
+        elif type == "scheduler":
+            return (comfy.samplers.KSampler.SCHEDULERS,)   
+        literal = folder_paths.get_filename_list(type)     
+        return (literal,)   
 
 # 注册节点
 NODE_CLASS_MAPPINGS = {
-    "ModelTypeJsonLiteral": ModelTypeJsonLiteral,
+    "ParameterTypeJsonLiteral": ParameterTypeJsonLiteral,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "ModelTypeJsonLiteral": "获取各类模型列表名字json",
+    "ParameterTypeJsonLiteral": "获取各类参数列表名字",
 }
 
