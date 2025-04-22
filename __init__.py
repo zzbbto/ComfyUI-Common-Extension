@@ -1,12 +1,14 @@
-"""
-ComfyUI插件初始化
-"""
-
 import importlib
+import sys
+import os
+script_directory = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, script_directory)
+
 
 node_list = [
     "foder_util",
     "model_util",
+    "face_util",
 ]
 
 NODE_CLASS_MAPPINGS = {}
