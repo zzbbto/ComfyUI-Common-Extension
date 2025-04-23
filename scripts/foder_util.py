@@ -23,9 +23,9 @@ class LoadFolderFromDirList:
         }
 
     # 描述返回类型和名称（可选，取决于您的使用场景）
-    RETURN_TYPES = ("STRING", "STRING","INT")
-    RETURN_NAMES = ("文件夹全路径列表", "文件夹名列表","数量")
-    OUTPUT_IS_LIST = (True, True, False)
+    RETURN_TYPES = ("STRING", "STRING","INT", "STRING")
+    RETURN_NAMES = ("文件夹全路径列表", "文件夹名列表","数量","当前文件夹名")
+    OUTPUT_IS_LIST = (True, True, False,False)
 
     FUNCTION = "load_folders"
     CATEGORY = "CommonExtension/folder"
@@ -44,6 +44,7 @@ class LoadFolderFromDirList:
         folder_paths = []
         folder_names = []
         image_count = 0
+        cur_folder_name = ""
         limit_images = image_load_cap > 0
         current_index = 0
         
@@ -76,6 +77,7 @@ class LoadFolderFromDirList:
                                 folder_paths.append(entry.path)
                                 folder_names.append(file_name_with_ext)
                                 image_count += 1  # 注意：这里假设每个文件夹至少包含一个图像，可能需要调整逻辑
+            cur_folder_name = os.path.basename(directory)         
         except Exception as e:
             # 捕获并处理其他潜在的异常（比如权限问题）
             # 在生产代码中，应该有更具体的错误处理逻辑
@@ -85,7 +87,7 @@ class LoadFolderFromDirList:
             raise FileNotFoundError(f"No folders found in directory '{directory}' starting from index {start_index}.")
         
         # 返回一个包含文件夹路径、文件夹名和加载的图像数量的元组，以及一个表示是否加载了图像的布尔值
-        return folder_paths, folder_names, image_count
+        return folder_paths, folder_names, image_count,cur_folder_name
 
 def check_have_file(directory: str, file_name: str) -> bool:
     print(f"check_have_file {directory}，{file_name} ")

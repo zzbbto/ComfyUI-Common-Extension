@@ -147,7 +147,7 @@ class FaceCheckDetectorNode:
                 self.current_prototxt != current_prototxt or 
                 self.current_caffemodel != current_caffemodel):
                 
-                self.release_models()  # 先释放旧模型
+                self.release_models()  # 先释放旧模型引用
                 try:
                     self.net = cv2.dnn.readNetFromCaffe(current_prototxt, current_caffemodel)
                     self.current_prototxt = current_prototxt
@@ -176,12 +176,10 @@ class FaceCheckDetectorNode:
         return (has_face, len(faces))
 
     def release_models(self):
-        """显式释放DNN模型资源"""
-        if self.net is not None:
-            self.net.release()
-            self.net = None
-            self.current_prototxt = None
-            self.current_caffemodel = None
+        """释放DNN模型引用，由垃圾回收处理资源"""
+        self.net = None
+        self.current_prototxt = None
+        self.current_caffemodel = None
 
 NODE_CLASS_MAPPINGS = {"FaceCheckDetectorNode": FaceCheckDetectorNode}
 NODE_DISPLAY_NAME_MAPPINGS = {"FaceCheckDetectorNode": "Face Check Detector Node"}
