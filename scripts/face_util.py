@@ -20,7 +20,7 @@ class FaceCheckDetectorNode:
         return {
             "required": {
                 "image": ("IMAGE",),
-                "detector_type": (["haar", "dnn"], {"default": "dnn"}),
+                "detector_type": (["haar", "dnn"], {"default": "haar"}),
             },
             "optional": {
                 "detection_target": (
@@ -181,5 +181,9 @@ class FaceCheckDetectorNode:
         self.current_prototxt = None
         self.current_caffemodel = None
 
-NODE_CLASS_MAPPINGS = {"FaceCheckDetectorNode": FaceCheckDetectorNode}
-NODE_DISPLAY_NAME_MAPPINGS = {"FaceCheckDetectorNode": "Face Check Detector Node"}
+NODE_CLASS_MAPPINGS = {
+    # "FaceCheckDetectorNode": FaceCheckDetectorNode
+    }
+NODE_DISPLAY_NAME_MAPPINGS = {
+    # "FaceCheckDetectorNode": "Face Check Detector Node"
+    }
