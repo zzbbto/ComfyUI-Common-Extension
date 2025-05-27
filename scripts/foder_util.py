@@ -134,9 +134,9 @@ class LoadFilesFromDirList:
         }
     
     # 更新返回类型和名称以匹配实际返回的值
-    RETURN_TYPES = ("IMAGE","STRING", "STRING", "STRING", "STRING", "STRING","INT")
-    RETURN_NAMES = ("图像","上一级目录名","文件全路径(带后缀名)", "文件全路径(不带后缀名)", "文件名(带后缀名)", "文件名(不带后缀名)", "数量")
-    OUTPUT_IS_LIST = (True, True, True,True,True,True,False)
+    RETURN_TYPES = ("STRING", "STRING", "STRING", "STRING", "STRING","INT")
+    RETURN_NAMES = ("上一级目录名","文件全路径(带后缀名)", "文件全路径(不带后缀名)", "文件名(带后缀名)", "文件名(不带后缀名)", "数量")
+    OUTPUT_IS_LIST = (True, True,True,True,True,False)
 
     FUNCTION = "load_files"
     CATEGORY = "CommonExtension/file"
@@ -153,7 +153,7 @@ class LoadFilesFromDirList:
             raise FileNotFoundError(f"Directory '{directory}' cannot be found.")
         
         # 初始化列表以存储文件路径和名称
-        images = []
+        # images = []
         parent_folder_names = []
         full_paths_with_ext = []
         full_paths_without_ext = []
@@ -199,13 +199,13 @@ class LoadFilesFromDirList:
                             if start_index<current_index:
                                 # 增量图像计数
                                 image_count += 1
-                                if entry.name.lower().endswith(tuple(valid_extensions)):
-                                    i = Image.open(entry.path)
-                                    i = ImageOps.exif_transpose(i)
-                                    image = i.convert("RGB")
-                                    image = np.array(image).astype(np.float32) / 255.0
-                                    image = torch.from_numpy(image)[None,]
-                                    images.append(image)
+                                # if entry.name.lower().endswith(tuple(valid_extensions)):
+                                #     i = Image.open(entry.path)
+                                #     i = ImageOps.exif_transpose(i)
+                                #     image = i.convert("RGB")
+                                #     image = np.array(image).astype(np.float32) / 255.0
+                                #     image = torch.from_numpy(image)[None,]
+                                #     images.append(image)
 
                                 parent_folder_name = os.path.basename(os.path.dirname(full_path_with_ext))
 
@@ -225,7 +225,7 @@ class LoadFilesFromDirList:
         if not full_paths_with_ext:
             raise FileNotFoundError(f"No files found in directory '{directory}' starting from index {start_index}.")
 
-        return images,parent_folder_names,full_paths_with_ext, full_paths_without_ext, file_names_with_ext, file_names_without_ext, image_count
+        return parent_folder_names,full_paths_with_ext, full_paths_without_ext, file_names_with_ext, file_names_without_ext, image_count
 
 
 # 注册节点

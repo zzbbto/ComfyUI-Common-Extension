@@ -9,6 +9,7 @@ node_list = [
     "foder_util",
     "model_util",
     "tool_util",
+    "camera_util",
 ]
 
 NODE_CLASS_MAPPINGS = {}
