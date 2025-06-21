@@ -2,3 +2,7 @@ opencv-python>=4.5.1
 numpy>=1.21.0
 torch>=2.0.0
 pillow>=9.0.0
+basicsr
+boxmot
+segmentation_models_pytorch
+ivy

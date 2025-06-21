@@ -10,6 +10,7 @@ node_list = [
     "model_util",
     "tool_util",
     "camera_util",
+    "memory_util",
 ]
 
 NODE_CLASS_MAPPINGS = {}
