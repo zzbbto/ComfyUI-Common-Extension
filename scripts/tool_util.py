@@ -78,115 +78,127 @@ class AnyBatchSliceNode:
         
         print(f"✅ 切片成功: 索引 {start_index}-{end_index} (长度: {len(sliced)}/{data_len})")
         return (sliced,)
-
-
+    
+class SegmentFrameAdjuster:
     @classmethod
-    def INPUT_TYPES(cls) -> Dict[str, Dict[str, Any]]:
+    def INPUT_TYPES(cls):
         return {
             "required": {
-                "anything": (any, {}),
-                "aggressive": ("BOOLEAN", {"default": True}),
-                "unload_models": ("BOOLEAN", {"default": True})
+                "segment_frames": ("STRING", {"default": ""}),
+                "max_frames": ("INT", {"default": 81, "min": 1, "max": 1000}),
+                "min_frames": ("INT", {"default": 25, "min": 1, "max": 1000}),
             }
         }
     
-    RETURN_TYPES = (any,)
-    RETURN_NAMES = ("anything",)
-    FUNCTION = "clean"
-    CATEGORY = "CommonExtension/debug"
-    DESCRIPTION = "强制清理内存和显存，解决内存泄漏问题"
+    RETURN_TYPES = ("STRING", "INT", "INT", "STRING", "STRING")
+    RETURN_NAMES = ("adjusted_segments", "total_frames", "segment_count", "segment_frames_index", "segment_frames_index_next")
+    FUNCTION = "adjust_segments"
+    CATEGORY = "CommonExtension/tool"
 
-    def __init__(self):
-        self.psutil_available = self.check_psutil()
+    def adjust_segments(self, segment_frames, max_frames, min_frames):
+        # 1. 参数校验
+        if min_frames > max_frames:
+            print(f"⚠️ 最小值({min_frames})>最大值({max_frames})，已设置min_frames=max_frames={max_frames}")
+            min_frames = max_frames
+        
+        # 2. 解析输入
+        try:
+            segments = [int(x.strip()) for x in segment_frames.split(',') if x.strip()]
+        except:
+            segments = []
+        
+        if not segments:
+            return ("", 0, 0, "", "")
+        
+        original_total = sum(segments)
+        adjusted_segments = []
+        carry_over = 0
+        
+        # 3. 处理所有片段
+        for i, seg in enumerate(segments):
+            current = seg + carry_over
+            carry_over = 0
+            is_last = (i == len(segments) - 1)
+            
+            # 关键修复：统一拆分条件
+            while current > max_frames:
+                # 拆分出max_frames片段
+                adjusted_segments.append(max_frames)
+                current -= max_frames
+                
+                # 如果是最后片段且剩余部分<min_frames，则合并
+                if is_last and current < min_frames and adjusted_segments:
+                    adjusted_segments[-1] += current
+                    current = 0
+                    break
+            
+            # 处理剩余部分
+            if current > 0:
+                if is_last and current < min_frames and adjusted_segments:
+                    adjusted_segments[-1] += current
+                else:
+                    adjusted_segments.append(current)
+        
+        # 4. 后处理确保所有片段≥min_frames
+        final_segments = []
+        for seg in adjusted_segments:
+            if seg >= min_frames:
+                final_segments.append(seg)
+            elif final_segments:
+                final_segments[-1] += seg
+            else:
+                final_segments.append(seg)
+        
+        # 5. 计算总帧数和轮数
+        total_frames = sum(final_segments)
+        segment_count = len(final_segments)
+        
+        # 6. 最终验证
+        if total_frames != original_total:
+            if final_segments:
+                final_segments[-1] += original_total - total_frames
+            else:
+                final_segments.append(original_total)
+            total_frames = original_total
+        
+        # 7. 计算帧索引序列
+        # segment_frames_index: 每个片段的起始帧索引
+        segment_frames_index = []
+        current_index = 0
+        for seg in final_segments:
+            segment_frames_index.append(str(current_index))
+            current_index += seg
+        
+        # segment_frames_index_next: 每个片段的起始帧索引和起始帧索引+1
+        segment_frames_index_next = []
+        for idx in segment_frames_index:
+            idx_int = int(idx)
+            if idx_int<=0:
+                continue
+            segment_frames_index_next.extend([str(idx_int - 1),str(idx_int)])
+        
+        # 8. 转换为字符串
+        adjusted_segments_str = ",".join(map(str, final_segments))
+        segment_frames_index_str = ",".join(segment_frames_index)
+        segment_frames_index_next_str = ",".join(segment_frames_index_next)
+        
+        return (
+            adjusted_segments_str, 
+            total_frames, 
+            segment_count,
+            segment_frames_index_str,
+            segment_frames_index_next_str
+        )
     
-    def check_psutil(self) -> bool:
-        try:
-            import psutil
-            return True
-        except ImportError:
-            print("⚠️ psutil 未安装，无法获取系统内存信息")
-            return False
-
-    def clean(self, anything: Any, aggressive: bool, unload_models: bool) -> Tuple[Any]:
-        # 记录清理前的内存状态
-        pre_vram = torch.cuda.memory_allocated() / (1024 ** 2)
-        pre_ram = self.get_system_memory_usage() if self.psutil_available else 0.0
-        
-        # 标准清理
-        if unload_models:
-            model_management.unload_all_models()
-        
-        # 清理PyTorch缓存
-        torch.cuda.empty_cache()
-        gc.collect()
-        
-        # 激进模式清理
-        if aggressive:
-            # 强制Python垃圾回收
-            for i in range(3):  # 多次回收确保清理
-                gc.collect()
-            
-            # 释放所有缓存的分配器内存
-            if hasattr(torch.cuda, 'memory_reserved'):
-                torch.cuda.memory_reserved(0)
-            
-            # 特殊处理ComfyUI内部缓存
-            self.clear_comfy_caches()
-        
-        # 记录清理后的内存状态
-        post_vram = torch.cuda.memory_allocated() / (1024 ** 2)
-        post_ram = self.get_system_memory_usage() if self.psutil_available else 0.0
-        
-        # 打印清理结果
-        print("\n" + "="*50 + " 内存清理报告 " + "="*50)
-        print(f"显存释放: {pre_vram - post_vram:.2f} MB (前: {pre_vram:.2f} MB → 后: {post_vram:.2f} MB)")
-        if self.psutil_available:
-            print(f"系统内存释放: {pre_ram - post_ram:.2f} MB (前: {pre_ram:.2f} MB → 后: {post_ram:.2f} MB)")
-        print("="*90 + "\n")
-        
-        return (anything,)
-
-    def get_system_memory_usage(self) -> float:
-        """获取当前进程的系统内存使用量（MB）"""
-        try:
-            import psutil
-            process = psutil.Process(os.getpid())
-            return process.memory_info().rss / (1024 ** 2)
-        except Exception:
-            return 0.0
-
-    def clear_comfy_caches(self) -> None:
-        """清除ComfyUI内部缓存"""
-        # 尝试清除已知缓存
-        cache_cleared = 0
-        for module_name, module in list(sys.modules.items()):
-            if 'comfy' in module_name or 'nodes' in module_name:
-                try:
-                    if hasattr(module, 'cache_clear'):
-                        module.cache_clear()
-                        cache_cleared += 1
-                except Exception:
-                    pass
-        
-        # 清除模型加载器缓存
-        if 'model_management' in sys.modules:
-            try:
-                model_management_module = sys.modules['model_management']
-                if hasattr(model_management_module, 'loaded_models'):
-                    model_management_module.loaded_models = []
-                    cache_cleared += 1
-            except Exception:
-                pass
-        
-        print(f"♻️ 清理了 {cache_cleared} 个内部缓存")
-
 # 节点注册
 NODE_CLASS_MAPPINGS = {
     "AnyBatchSliceNode": AnyBatchSliceNode,
+    "SegmentFrameAdjuster":SegmentFrameAdjuster,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "AnyBatchSliceNode": "通用批处理切片",
+    "SegmentFrameAdjuster": "通用每轮帧数限制",    
 }
 
 # 导出配置

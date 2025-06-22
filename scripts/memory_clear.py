@@ -634,33 +634,78 @@ def install_pynvml():
         return None
 
 def get_system_vram_usage() -> float:
-    """获取更准确的系统显存使用情况（MB）"""
+    """获取准确的系统总显存使用量（包含驱动层）"""
+    total_used_mb = 0
+    
+    # 方案1: 使用pynvml获取精确值（首选）
     try:
-        pynvml = install_pynvml()
-        if not pynvml:
-            # 回退到PyTorch的显存统计
-            return torch.cuda.memory_allocated() / (1024 * 1024)
-            
+        import pynvml
         pynvml.nvmlInit()
-        handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-        info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+        device_count = pynvml.nvmlDeviceGetCount()
+        for i in range(device_count):
+            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+            info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+            total_used_mb += info.used / (1024 * 1024)
         pynvml.nvmlShutdown()
-        
-        # Windows系统需要减去驱动层开销
-        if sys.platform == 'win32':
-            # 获取PyTorch实际分配量作为基准
-            torch_alloc = torch.cuda.memory_allocated() / (1024 * 1024)
-            # 计算驱动层开销（经验值）
-            driver_overhead = max(0, info.used / (1024 * 1024) - torch_alloc - 100)
-            # 应用修正
-            corrected_usage = torch_alloc + min(driver_overhead, 500)  # 限制最大开销500MB
-            return corrected_usage
-        
-        return info.used / (1024 * 1024)
-    except Exception as e:
-        print(f"⚠️ 无法获取系统显存使用情况: {str(e)}")
-        # 回退到PyTorch的统计
-        return torch.cuda.memory_allocated() / (1024 * 1024)
+        return total_used_mb
+    except ImportError:
+        pass
+    
+    # 方案2: 解析nvidia-smi输出（跨平台）
+    try:
+        import subprocess
+        result = subprocess.run(
+            ['nvidia-smi', '--query-gpu=memory.used', '--format=csv,noheader,nounits'],
+            capture_output=True, text=True
+        )
+        if result.returncode == 0:
+            # 处理多GPU情况
+            usages = result.stdout.strip().split('\n')
+            for usage in usages:
+                if usage.isdigit():
+                    total_used_mb += float(usage)
+            return total_used_mb
+    except:
+        pass
+    
+    # 方案3: 回退到PyTorch统计（不准确但可用）
+    return torch.cuda.memory_allocated() / (1024 ** 2) + 500  # 加上估计的上下文占用
+
+# 新增函数：获取显卡总显存容量
+def get_total_gpu_memory() -> float:
+    """获取显卡总显存容量（MB）"""
+    try:
+        # 首选方法：使用pynvml
+        import pynvml
+        pynvml.nvmlInit()
+        handle = pynvml.nvmlDeviceGetHandleByIndex(0)  # 默认第一个GPU
+        info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+        total_mb = info.total / (1024 ** 2)
+        pynvml.nvmlShutdown()
+        return total_mb
+    except ImportError:
+        pass
+    except Exception:
+        pass
+    
+    # 备选方法：使用nvidia-smi命令行
+    try:
+        import subprocess
+        result = subprocess.run(
+            ['nvidia-smi', '--query-gpu=memory.total', '--format=csv,noheader,nounits'],
+            capture_output=True, text=True
+        )
+        if result.returncode == 0:
+            return float(result.stdout.strip())
+    except:
+        pass
+    
+    # 最后备选：使用PyTorch的近似值
+    if torch.cuda.is_available():
+        return torch.cuda.get_device_properties(0).total_memory / (1024 ** 2)
+    
+    # 默认值（常见显卡容量）
+    return 8192.0  # 8GB
     
 def _reset_cuda_driver():
     """直接重置CUDA驱动状态（系统级操作）"""

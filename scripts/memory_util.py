@@ -11,7 +11,8 @@ from memory_clear import (
     unload_models, 
     perform_full_cleanup,
     ultimate_cleanup,
-    get_system_vram_usage
+    get_system_vram_usage,
+    get_total_gpu_memory
 )
 from types import ModuleType, FunctionType
 
@@ -160,6 +161,7 @@ class IntegratedMemoryAnalyzer(MemoryAnalyzer):
         return {
             "required": {
                 "anything": (any, {}),
+                "enable_analyzer": ("BOOLEAN", {"default": True}),
                 "min_size_mb": ("FLOAT", {"default": 1, "min": 0.1, "max": 1000, "step": 0.1}),
                 "timeout": ("FLOAT", {"default": 60.0, "min": 5.0, "max": 300.0, "step": 5.0})
             },
@@ -177,7 +179,7 @@ class IntegratedMemoryAnalyzer(MemoryAnalyzer):
     FUNCTION = "analyze"
     CATEGORY = "CommonExtension/debug"
 
-    def analyze(self, anything: Any, min_size_mb: float, timeout: float, 
+    def analyze(self, anything: Any,enable_analyzer: bool, min_size_mb: float, timeout: float, 
                 clean_before: bool = True, clean_intensity: int = 3, 
                 unload: bool = True, print_detail: bool = False, 
                 sort_by_size: bool = True) -> Tuple[Any]:
@@ -200,6 +202,10 @@ class IntegratedMemoryAnalyzer(MemoryAnalyzer):
             print("⏩ 跳过清理操作")
             post_vram = get_system_vram_usage()
         
+        if not enable_analyzer:
+            print("="*50 + f"跳过分析 第{self.numCount}次分析结束 " + "="*50 + "\n")
+            return (anything,)
+
         current_vram = torch.cuda.memory_allocated()
         reserved_vram = torch.cuda.memory_reserved()
         
@@ -217,10 +223,12 @@ class IntegratedMemoryAnalyzer(MemoryAnalyzer):
         
         # 获取系统显存使用情况
         system_vram_usage = get_system_vram_usage()
+        total_gpu_memory = get_total_gpu_memory()
+        total_usage_percent = (system_vram_usage / total_gpu_memory) * 100
         
         print(f"\n📊 显存分布分析:")
-        print(f"- PyTorch分配显存: {current_vram/1024**2:.2f} MB")
-        print(f"- 系统总显存使用: {system_vram_usage:.2f} MB")
+        print(f"- 系统总显存使用: {system_vram_usage:.2f} MB({total_usage_percent:.1f}%)")
+        print(f"- PyTorch分配显存: {current_vram/1024**2:.2f} MB({current_vram/1024**2/total_gpu_memory*100:.1f}%)")
         print(f"- 已扫描显存: {total_scanned_memory/1024**2:.2f} MB ({len(tensors)+small_tensor_count}个张量)")
         print(f"- 未追踪显存: {(system_vram_usage * 1024**2 - current_vram)/1024**2:.2f} MB (CUDA上下文/驱动层)")
         print(f"- 大型张量(>={min_size_mb}MB): {large_tensors_memory/1024**2:.2f} MB ({len(tensors)}个)")
@@ -312,17 +320,15 @@ class IntegratedMemoryAnalyzer(MemoryAnalyzer):
                 context_percent = (context_usage / system_vram) * 100
                 
                 print(f"\n🔧 CUDA上下文分析:")
-                print(f"- 系统总显存使用: {system_vram:.2f} MB")
-                print(f"- PyTorch分配显存: {pytorch_vram:.2f} MB")
                 print(f"- CUDA上下文占用: {context_usage:.2f} MB ({context_percent:.1f}%)")
                 
-                if context_percent > 30:
-                    print("⚠️ CUDA上下文占用过高，建议:")
-                    print("  - 减少工作流中模型加载/卸载次数")
-                    print("  - 使用'内存清理'节点")
-                    print("  - 检查是否有其他程序占用显存")
-                elif context_percent > 15:
-                    print("💡 CUDA上下文占用适中，可考虑优化工作流")            
+                # if context_percent > 30:
+                #     print("⚠️ CUDA上下文占用过高，建议:")
+                #     print("  - 减少工作流中模型加载/卸载次数")
+                #     print("  - 使用'内存清理'节点")
+                #     print("  - 检查是否有其他程序占用显存")
+                # elif context_percent > 15:
+                #     print("💡 CUDA上下文占用适中，可考虑优化工作流")            
     
     def _print_history_summary(self, current_vram: int) -> None:
         if len(self.history) > 1 and len(self.history) >= 2:
