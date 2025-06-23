@@ -12,7 +12,7 @@ class LoadFolderFromDirList:
                 "directory": ("STRING", {"default": ""}),
             },
             "optional": {
-                "image_load_cap": ("INT", {"default": 0, "min": 0, "step": 1}),
+                "image_load_cap": ("INT", {"default": 1, "min": 0, "step": 1}),
                 "start_index": ("INT", {"default": 0, "min": 0, "step": 1}),
                 "include_file_name1": ("STRING", {"default": None}),
                 "include_file_name2": ("STRING", {"default": None}),
@@ -84,7 +84,9 @@ class LoadFolderFromDirList:
             raise e
         
         if not folder_paths:
-            raise FileNotFoundError(f"No folders found in directory '{directory}' starting from index {start_index}.")
+            # raise FileNotFoundError(f"No folders found in directory '{directory}' starting from index {start_index}.")
+            folder_paths.append(" ")
+            folder_names.append(" ")
         
         # 返回一个包含文件夹路径、文件夹名和加载的图像数量的元组，以及一个表示是否加载了图像的布尔值
         return folder_paths, folder_names, image_count,cur_folder_name
@@ -121,7 +123,7 @@ class LoadFilesFromDirList:
                 "directory": ("STRING", {"default": ""}),
             },
             "optional": {
-                "image_load_cap": ("INT", {"default": 0, "min": 0, "step": 1}),
+                "image_load_cap": ("INT", {"default": 1, "min": 0, "step": 1}),
                 "start_index": ("INT", {"default": 0, "min": 0, "step": 1}),
                 "include_file_name1": ("STRING", {"default": None}),
                 "include_file_name2": ("STRING", {"default": None}),
@@ -134,9 +136,9 @@ class LoadFilesFromDirList:
         }
     
     # 更新返回类型和名称以匹配实际返回的值
-    RETURN_TYPES = ("STRING", "STRING", "STRING", "STRING", "STRING","INT")
-    RETURN_NAMES = ("上一级目录名","文件全路径(带后缀名)", "文件全路径(不带后缀名)", "文件名(带后缀名)", "文件名(不带后缀名)", "数量")
-    OUTPUT_IS_LIST = (True, True,True,True,True,False)
+    RETURN_TYPES = ("STRING", "STRING", "STRING", "STRING", "STRING","INT","IMAGE")
+    RETURN_NAMES = ("上一级目录名","文件全路径(带后缀名)", "文件全路径(不带后缀名)", "文件名(带后缀名)", "文件名(不带后缀名)", "数量","图像")
+    OUTPUT_IS_LIST = (False, True,True,True,True,False,False)
 
     FUNCTION = "load_files"
     CATEGORY = "CommonExtension/file"
@@ -153,8 +155,8 @@ class LoadFilesFromDirList:
             raise FileNotFoundError(f"Directory '{directory}' cannot be found.")
         
         # 初始化列表以存储文件路径和名称
-        # images = []
-        parent_folder_names = []
+        image_list = []
+        parent_folder_names = ""
         full_paths_with_ext = []
         full_paths_without_ext = []
         file_names_with_ext = []
@@ -165,6 +167,7 @@ class LoadFilesFromDirList:
         image_count = 0
         limit_images = image_load_cap > 0
 
+        valid_extensions = ['.jpg', '.jpeg', '.png', '.webp']
         try:
             with os.scandir(directory) as it:
                 for entry in it:
@@ -198,26 +201,69 @@ class LoadFilesFromDirList:
                             if start_index<current_index:
                                 # 增量图像计数
                                 image_count += 1
+                                if entry.name.lower().endswith(tuple(valid_extensions)):
+                                    i = Image.open(entry.path)
+                                    i = ImageOps.exif_transpose(i)
+                                    image = i.convert("RGB")
+                                    image = np.array(image).astype(np.float32) / 255.0
+                                    image = torch.from_numpy(image)[None,]
+                                    image_list.append(image)
 
-                                parent_folder_name = os.path.basename(os.path.dirname(full_path_with_ext))
-
+                                # parent_folder_name = os.path.basename(os.path.dirname(full_path_with_ext))
                                 # 添加到列表中
-                                parent_folder_names.append(parent_folder_name)
                                 full_paths_with_ext.append(full_path_with_ext)
                                 full_paths_without_ext.append(os.path.join(os.path.dirname(full_path_with_ext), file_name_without_ext))
                                 file_names_with_ext.append(file_name_with_ext)
                                 file_names_without_ext.append(file_name_without_ext)
 
-
+            parent_folder_names = os.path.dirname(directory)
         except Exception as e:
             # 捕获并处理其他潜在的异常（比如权限问题）
             raise e
 
-        # 如果没有找到文件，则抛出错误
+        # # 如果没有找到文件，则抛出错误
         if not full_paths_with_ext:
-            raise FileNotFoundError(f"No files found in directory '{directory}' starting from index {start_index}.")
+            # raise FileNotFoundError(f"No files found in directory '{directory}' starting from index {start_index}.")
+            full_paths_with_ext.append(" ")
+            full_paths_without_ext.append(" ")
+            file_names_with_ext.append(" ")
+            file_names_without_ext.append(" ")
 
-        return parent_folder_names,full_paths_with_ext, full_paths_without_ext, file_names_with_ext, file_names_without_ext, image_count
+        # 将图像列表转换为批次张量
+        if image_list:
+            # 检查所有图像尺寸是否一致
+            shapes = [img.shape for img in image_list]
+            unique_shapes = set(shapes)
+            
+            # if len(unique_shapes) > 1:
+            #     # 如果尺寸不一致，调整到最小尺寸
+            #     min_height = min(s[1] for s in shapes)
+            #     min_width = min(s[2] for s in shapes)
+            #     resized_images = []
+                
+            #     for img in image_list:
+            #         if img.shape[1] != min_height or img.shape[2] != min_width:
+            #             # 调整图像尺寸
+            #             img_resized = torch.nn.functional.interpolate(
+            #                 img.permute(0, 3, 1, 2), 
+            #                 size=(min_height, min_width), 
+            #                 mode='bilinear', 
+            #                 align_corners=False
+            #             ).permute(0, 2, 3, 1)
+            #             resized_images.append(img_resized)
+            #         else:
+            #             resized_images.append(img)
+                
+            #     image_tensor = torch.cat(resized_images, dim=0)
+            # else:
+            image_tensor = torch.cat(image_list, dim=0)
+        else:
+            # 创建空图像张量 [0, H, W, C]
+            #image_tensor = torch.zeros((0, 1, 1, 3))
+            image_tensor = None
+
+        return (parent_folder_names,full_paths_with_ext, full_paths_without_ext, file_names_with_ext,
+                file_names_without_ext, image_count,image_tensor)
 
 
 class LoadFilesParentDir:
@@ -230,8 +276,8 @@ class LoadFilesParentDir:
             "optional": {}
         }
     
-    RETURN_TYPES = ("STRING", "STRING")
-    RETURN_NAMES = ("目录名", "目录全路径")
+    RETURN_TYPES = ("STRING", "STRING", "STRING", "STRING")
+    RETURN_NAMES = ("目录名", "目录全路径", "文件名(带后缀)", "文件名(不带后缀)")
     FUNCTION = "load_files"
     CATEGORY = "CommonExtension/file"
 
@@ -239,25 +285,47 @@ class LoadFilesParentDir:
         # 确保路径是绝对路径
         abs_path = os.path.abspath(directory)
         
-        # 判断是文件还是目录
+        # 初始化变量
+        parent_name = ""
+        parent_dir = ""
+        filename_with_ext = ""
+        filename_without_ext = ""
+        
+        # 判断路径类型
         if os.path.isfile(abs_path):
-            # 如果是文件，获取其所在目录
+            # 如果是文件
             parent_dir = os.path.dirname(abs_path)
             parent_name = os.path.basename(parent_dir)
+            filename_with_ext = os.path.basename(abs_path)
+            filename_without_ext = os.path.splitext(filename_with_ext)[0]
+            
         elif os.path.isdir(abs_path):
-            # 如果是目录，获取其父目录
+            # 如果是目录
             parent_dir = os.path.dirname(abs_path)
             parent_name = os.path.basename(parent_dir)
+            
+            # 获取目录名称作为文件名
+            dir_name = os.path.basename(abs_path)
+            filename_with_ext = dir_name
+            filename_without_ext = dir_name
+            
         else:
-            # 如果路径无效，尝试获取可能的父目录
+            # 如果路径无效
             parent_dir = os.path.dirname(abs_path)
-            parent_name = os.path.basename(parent_dir) if parent_dir else ""
+            if parent_dir:
+                parent_name = os.path.basename(parent_dir)
+            
+            # 尝试获取最后一部分作为文件名
+            last_part = os.path.basename(abs_path)
+            if last_part:
+                filename_with_ext = last_part
+                filename_without_ext = os.path.splitext(last_part)[0]
         
         # 处理根目录的特殊情况
         if parent_dir == os.path.dirname(parent_dir):
             parent_name = os.path.basename(parent_dir) or os.path.splitdrive(parent_dir)[0]
         
-        return (parent_name, parent_dir)
+        return (parent_name, parent_dir, filename_with_ext, filename_without_ext)
 
 
 # 注册节点
