@@ -165,7 +165,6 @@ class LoadFilesFromDirList:
         image_count = 0
         limit_images = image_load_cap > 0
 
-        valid_extensions = ['.jpg', '.jpeg', '.png', '.webp']
         try:
             with os.scandir(directory) as it:
                 for entry in it:
@@ -199,13 +198,6 @@ class LoadFilesFromDirList:
                             if start_index<current_index:
                                 # 增量图像计数
                                 image_count += 1
-                                # if entry.name.lower().endswith(tuple(valid_extensions)):
-                                #     i = Image.open(entry.path)
-                                #     i = ImageOps.exif_transpose(i)
-                                #     image = i.convert("RGB")
-                                #     image = np.array(image).astype(np.float32) / 255.0
-                                #     image = torch.from_numpy(image)[None,]
-                                #     images.append(image)
 
                                 parent_folder_name = os.path.basename(os.path.dirname(full_path_with_ext))
 
@@ -228,14 +220,56 @@ class LoadFilesFromDirList:
         return parent_folder_names,full_paths_with_ext, full_paths_without_ext, file_names_with_ext, file_names_without_ext, image_count
 
 
+class LoadFilesParentDir:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                 "directory": ("STRING", {"default": ""}),
+            },
+            "optional": {}
+        }
+    
+    RETURN_TYPES = ("STRING", "STRING")
+    RETURN_NAMES = ("目录名", "目录全路径")
+    FUNCTION = "load_files"
+    CATEGORY = "CommonExtension/file"
+
+    def load_files(self, directory: str):
+        # 确保路径是绝对路径
+        abs_path = os.path.abspath(directory)
+        
+        # 判断是文件还是目录
+        if os.path.isfile(abs_path):
+            # 如果是文件，获取其所在目录
+            parent_dir = os.path.dirname(abs_path)
+            parent_name = os.path.basename(parent_dir)
+        elif os.path.isdir(abs_path):
+            # 如果是目录，获取其父目录
+            parent_dir = os.path.dirname(abs_path)
+            parent_name = os.path.basename(parent_dir)
+        else:
+            # 如果路径无效，尝试获取可能的父目录
+            parent_dir = os.path.dirname(abs_path)
+            parent_name = os.path.basename(parent_dir) if parent_dir else ""
+        
+        # 处理根目录的特殊情况
+        if parent_dir == os.path.dirname(parent_dir):
+            parent_name = os.path.basename(parent_dir) or os.path.splitdrive(parent_dir)[0]
+        
+        return (parent_name, parent_dir)
+
+
 # 注册节点
 NODE_CLASS_MAPPINGS = {
     "LoadFolderFromDir": LoadFolderFromDirList,
-    "LoadFilesFromDir": LoadFilesFromDirList
+    "LoadFilesFromDir": LoadFilesFromDirList,
+    "LoadFilesParentDir": LoadFilesParentDir,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "LoadFolderFromDir": "获取子文件夹数据",
-    "LoadFilesFromDir": "获取文件夹下文件数据"
+    "LoadFilesFromDir": "获取文件夹下文件数据",
+    "LoadFilesParentDir": "获取文件所在目录",
 }
 
