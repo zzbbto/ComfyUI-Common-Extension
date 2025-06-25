@@ -11,6 +11,7 @@ node_list = [
     "tool_util",
     "camera_util",
     "memory_util",
+    "sampler_util",
 ]
 
 NODE_CLASS_MAPPINGS = {}
