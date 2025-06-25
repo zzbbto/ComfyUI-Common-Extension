@@ -13,7 +13,8 @@ class TikTokAntiDetectUtils:
         "iphone16": {"read_noise": 1.8, "dark_current": 0.025, "gain": 2.0},
         "pixel8": {"read_noise": 2.0, "dark_current": 0.03, "gain": 1.9},
         "xiaomi14": {"read_noise": 2.2, "dark_current": 0.035, "gain": 1.8},
-        "action_cam": {"read_noise": 3.0, "dark_current": 0.10, "gain": 2.2}
+        "action_cam": {"read_noise": 3.0, "dark_current": 0.10, "gain": 2.2},
+        "dslr": {"read_noise": 1.5, "dark_current": 0.015, "gain": 1.0}
     }
     
     # 压缩参数更新为2025年标准

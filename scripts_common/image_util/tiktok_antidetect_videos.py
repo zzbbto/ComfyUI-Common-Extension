@@ -9,16 +9,6 @@ from .tiktok_antidetect_utils import TikTokAntiDetectUtils
 import comfy.utils  # 导入ComfyUI进度条工具
 
 
-import torch
-import numpy as np
-import math
-import cv2
-import random
-import torchvision.transforms.functional as TF
-from .tiktok_antidetect_utils import TikTokAntiDetectUtils
-import comfy.utils
-import hashlib
-
 class TikTokAntiDetectVideo:
     """潜在空间的抖音AI检测对抗处理器 (2025.6优化版)"""
     @classmethod

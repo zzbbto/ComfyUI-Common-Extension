@@ -12,7 +12,7 @@ NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
 
 # 自动发现scripts目录及其所有子目录下的节点模块
-scripts_dir = os.path.join(script_directory, "scripts")
+scripts_dir = os.path.join(script_directory, "scripts_common")
 
 if os.path.exists(scripts_dir):
     # 使用pathlib递归查找所有Python文件
