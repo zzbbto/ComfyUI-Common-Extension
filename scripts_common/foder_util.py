@@ -137,7 +137,7 @@ class LoadFilesFromDirList:
     
     # 更新返回类型和名称以匹配实际返回的值
     RETURN_TYPES = ("STRING", "STRING", "STRING", "STRING", "STRING","INT","IMAGE")
-    RETURN_NAMES = ("上一级目录名","文件全路径(带后缀名)", "文件全路径(不带后缀名)", "文件名(带后缀名)", "文件名(不带后缀名)", "数量","图像")
+    RETURN_NAMES = ("当前目录名","文件全路径(带后缀名)", "文件全路径(不带后缀名)", "文件名(带后缀名)", "文件名(不带后缀名)", "数量","图像")
     OUTPUT_IS_LIST = (False, True,True,True,True,False,False)
 
     FUNCTION = "load_files"
@@ -216,7 +216,9 @@ class LoadFilesFromDirList:
                                 file_names_with_ext.append(file_name_with_ext)
                                 file_names_without_ext.append(file_name_without_ext)
 
-            parent_folder_names = os.path.dirname(directory)
+            # parent_folder_names = os.path.dirname(directory)
+            abs_path = os.path.abspath(directory)
+            parent_folder_names = os.path.basename(abs_path)
         except Exception as e:
             # 捕获并处理其他潜在的异常（比如权限问题）
             raise e
