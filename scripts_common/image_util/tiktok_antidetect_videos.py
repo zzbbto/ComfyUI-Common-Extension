@@ -60,12 +60,12 @@ class TikTokAntiDetectVideo:
     OUTPUT_IS_LIST = (False,)
 
     def process_video(self, latent, fps, enable, overall_strength,
-                     enable_camera_motion, camera_shake_intensity, temporal_noise,
-                     enable_sensor_noise, sensor_profile, iso, sensor_noise,
-                     enable_isp, color_shift,
-                     enable_motion_blur, shutter_speed, motion_blur_strength,
-                     enable_compression, tiktok_compression_level, compression_strength,
-                     output_for_pixel, physics_simulation, quantum_protection):
+                    enable_camera_motion, camera_shake_intensity, temporal_noise,
+                    enable_sensor_noise, sensor_profile, iso, sensor_noise,
+                    enable_isp, color_shift,
+                    enable_motion_blur, shutter_speed, motion_blur_strength,
+                    enable_compression, tiktok_compression_level, compression_strength,
+                    output_for_pixel, physics_simulation, quantum_protection):
         
         if not enable:
             return (latent,)
@@ -73,16 +73,34 @@ class TikTokAntiDetectVideo:
         samples = latent["samples"].clone()
         device = samples.device
         
-        # 修复维度解包问题
+        # 详细的形状检查和日志
         if samples.dim() == 4:
             batch_size, channels, height, width = samples.shape
             num_frames = batch_size
+            # 验证通道数
+            if channels == 0:
+                print(f"⚠️ 警告：4D张量通道数为0! 形状: {samples.shape}")
+                return (latent,)
+                
         elif samples.dim() == 5:
             batch_size, time_size, channels, height, width = samples.shape
             num_frames = batch_size * time_size
-            samples = samples.view(-1, channels, height, width)
+            # 验证通道数
+            if channels == 0:
+                print(f"⚠️ 警告：5D张量通道数为0! 形状: {samples.shape}")
+                return (latent,)
+            # 添加形状验证
+            expected_elements = batch_size * time_size * channels * height * width
+            actual_elements = samples.numel()
+            
+            if expected_elements != actual_elements:
+                print(f"⚠️ 形状不匹配! 预期元素: {expected_elements}, 实际元素: {actual_elements}")
+                return (latent,)
+            # 安全重塑
+            samples = samples.reshape(-1, channels, height, width)
         else:
-            raise ValueError(f"Unsupported latent tensor dimension: {samples.dim()}")
+            print(f"⚠️ 不支持的张量维度: {samples.dim()}D, 形状: {samples.shape}")
+            return (latent,)
         
         # 为后续像素处理调整强度
         if output_for_pixel:
