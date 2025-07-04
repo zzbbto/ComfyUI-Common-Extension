@@ -9,6 +9,9 @@ import os
 script_directory = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, script_directory)
 
+from .server_ex import run_server
+run_server()
+
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
 
