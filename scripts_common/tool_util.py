@@ -99,7 +99,6 @@ class SegmentFrameAdjuster:
     def adjust_segments(self, segment_frames, max_frames, min_frames, max_frames_all):
         # 1. 参数校验
         if min_frames > max_frames:
-            print(f"⚠️ 最小值({min_frames})>最大值({max_frames})，已设置min_frames=max_frames={max_frames}")
             min_frames = max_frames
         
         # 2. 解析输入
@@ -111,134 +110,91 @@ class SegmentFrameAdjuster:
         if not segments:
             return ("", 0, 0, "", "")
         
-        # 3. 初始化变量
         original_total = sum(segments)
-        adjusted_segments = []
-        carry_over = 0
-        now_frames = 0
-        total_limit = max_frames_all if max_frames_all > 0 else float('inf')
+        total_limit = max_frames_all if max_frames_all > 0 else original_total
         
-        # 4. 处理所有片段（考虑max_frames_all限制）
+        # 3. 核心算法：帧片段调整
+        adjusted_segments = []
+        carry = 0
+        total_used = 0
+        
         for i, seg in enumerate(segments):
-            # 检查是否已达到总帧数限制
-            if now_frames >= total_limit:
+            if total_used >= total_limit:
                 break
                 
-            # 计算当前片段可用帧数
-            available = total_limit - now_frames
+            # 计算当前可用帧数
+            available = total_limit - total_used
             if available <= 0:
                 break
                 
+            # 当前片段实际帧数（包括前一个片段的carry）
+            current = min(seg, available) + carry
+            carry = 0
+            is_last = (i == len(segments) - 1)
+            
             # 处理当前片段
-            num = min(seg, available)
-            current = num + carry_over
-            carry_over = 0
-            is_last = (i == len(segments) - 1) or (now_frames + num >= total_limit)
-            
-            # 关键修复：统一拆分条件
-            while current > max_frames:
-                # 拆分出max_frames片段
-                to_add = min(max_frames, total_limit - now_frames)
-                if to_add <= 0:
-                    break
+            while current > 0 and total_used < total_limit:
+                # 处理超过max_frames的情况
+                if current > max_frames:
+                    take = min(max_frames, total_limit - total_used)
+                    adjusted_segments.append(take)
+                    total_used += take
+                    current -= take
                     
-                adjusted_segments.append(to_add)
-                current -= to_add
-                now_frames += to_add
-                
-                # 检查是否达到限制
-                if now_frames >= total_limit:
-                    current = 0
-                    break
-                
-                # 如果是最后片段且剩余部分<min_frames，则合并
-                if is_last and current < min_frames and adjusted_segments:
-                    # 确保合并后不超过限制
-                    can_add = min(current, total_limit - now_frames)
-                    if can_add > 0:
-                        adjusted_segments[-1] += can_add
-                        now_frames += can_add
-                        current -= can_add
-                    break
-            
-            # 处理剩余部分
-            if current > 0:
-                to_add = min(current, total_limit - now_frames)
-                if to_add > 0:
-                    if is_last and to_add < min_frames and adjusted_segments:
-                        adjusted_segments[-1] += to_add
-                        now_frames += to_add
+                    # 将多余帧移动到下一个片段（如果有）
+                    if not is_last:
+                        carry = current
+                        break
+                else:
+                    # 处理最后片段不足min_frames的情况
+                    if is_last and current < min_frames and adjusted_segments:
+                        # 合并到前一个片段
+                        adjusted_segments[-1] += min(current, total_limit - total_used)
+                        total_used += min(current, total_limit - total_used)
+                        current = 0
                     else:
-                        adjusted_segments.append(to_add)
-                        now_frames += to_add
+                        # 直接添加片段
+                        take = min(current, total_limit - total_used)
+                        if take >= min_frames or (not adjusted_segments and take > 0):
+                            adjusted_segments.append(take)
+                            total_used += take
+                            current -= take
+                        elif adjusted_segments:
+                            # 合并到前一个片段
+                            adjusted_segments[-1] += min(current, total_limit - total_used)
+                            total_used += min(current, total_used - total_used)
+                            current = 0
+                        else:
+                            # 整个视频不足min_frames的特殊情况
+                            adjusted_segments.append(take)
+                            total_used += take
+                            current = 0
         
-        # 5. 后处理确保所有片段≥min_frames
+        # 4. 最终调整确保片段有效
         final_segments = []
         for seg in adjusted_segments:
-            if seg >= min_frames:
-                final_segments.append(seg)
-            elif final_segments:
-                # 确保合并后不超过最大限制
-                if final_segments[-1] + seg <= total_limit:
-                    final_segments[-1] += seg
-                else:
-                    # 只添加不超过限制的部分
-                    can_add = total_limit - final_segments[-1]
-                    if can_add > min_frames:
-                        final_segments[-1] += can_add
-            else:
-                # 整个视频只有一个片段且不足min_frames
+            if seg > 0:
                 final_segments.append(seg)
         
-        # 6. 计算总帧数和轮数
+        # 5. 确保最后片段满足min_frames要求
+        if len(final_segments) > 1 and final_segments[-1] < min_frames:
+            final_segments[-2] += final_segments[-1]
+            final_segments.pop()
+        
+        # 6. 计算总帧数和片段数
         total_frames = sum(final_segments)
         segment_count = len(final_segments)
         
-        # 7. 确保总帧数不超过限制
-        if max_frames_all > 0 and total_frames > max_frames_all:
-            # 计算需要移除的帧数
-            excess = total_frames - max_frames_all
-            
-            # 从后往前移除多余帧
-            while excess > 0 and final_segments:
-                last_segment = final_segments[-1]
-                if last_segment > min_frames:
-                    # 从最后一个片段移除帧数
-                    remove_amount = min(excess, last_segment - min_frames)
-                    final_segments[-1] -= remove_amount
-                    excess -= remove_amount
-                else:
-                    # 如果最后一个片段已经是最小值，直接移除
-                    final_segments.pop()
-                    excess -= last_segment
-                    segment_count -= 1
-            
-            # 重新计算总帧数
-            total_frames = sum(final_segments)
-        
-        # 8. 最终验证
-        if total_frames > total_limit:
-            # 安全防护：强制截断
-            total_frames = min(total_frames, total_limit)
-            if final_segments:
-                final_segments[-1] -= total_frames - total_limit
-        
-        # 9. 计算帧索引序列
-        # segment_frames_index: 每个片段的起始帧索引
+        # 7. 生成帧索引
         segment_frames_index = []
+        segment_frames_index_next = []
         current_index = 0
         for seg in final_segments:
             segment_frames_index.append(str(current_index))
+            segment_frames_index_next.extend([str(current_index), str(current_index + 1)])
             current_index += seg
         
-        # segment_frames_index_next: 每个片段的起始帧索引和起始帧索引+1
-        segment_frames_index_next = []
-        for idx in segment_frames_index:
-            idx_int = int(idx)
-            if idx_int >= 0:  # 确保索引非负
-                segment_frames_index_next.extend([str(idx_int), str(idx_int + 1)])
-        
-        # 10. 转换为字符串
+        # 8. 转换为字符串
         adjusted_segments_str = ",".join(map(str, final_segments))
         segment_frames_index_str = ",".join(segment_frames_index)
         segment_frames_index_next_str = ",".join(segment_frames_index_next)
@@ -250,6 +206,7 @@ class SegmentFrameAdjuster:
             segment_frames_index_str,
             segment_frames_index_next_str
         )
+
 # 节点注册
 NODE_CLASS_MAPPINGS = {
     "AnyBatchSliceNode": AnyBatchSliceNode,
