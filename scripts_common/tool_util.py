@@ -162,7 +162,7 @@ class SegmentFrameAdjuster:
                         elif adjusted_segments:
                             # 合并到前一个片段
                             adjusted_segments[-1] += min(current, total_limit - total_used)
-                            total_used += min(current, total_used - total_used)
+                            total_used += min(current, total_limit - total_used)
                             current = 0
                         else:
                             # 整个视频不足min_frames的特殊情况
