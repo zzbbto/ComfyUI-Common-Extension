@@ -1,21 +1,19 @@
 import importlib
-import traceback
 from pathlib import Path
 import sys
 import os
-import asyncio
 
 # 获取插件根目录
 script_directory = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, script_directory)
 
-# 导入 lora_preview 核心逻辑
+# 导入核心逻辑
 try:
     from .lora_preview import setup_plugin as lora_setup_plugin
 except ImportError as e:
     lora_setup_plugin = None
 
-# 节点注册逻辑（保留原有节点加载）
+# 节点注册
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
 scripts_dir = os.path.join(script_directory, "scripts_common")
@@ -34,27 +32,27 @@ if os.path.exists(scripts_dir):
 else:
     print(f"[CommonExtension] 未找到 scripts_common 目录：{scripts_dir}")
 
-# 注册路由（核心入口）
-def delayed_register():
+# 注册路由
+def register_routes():
     try:
         from server import PromptServer
         if hasattr(PromptServer, "instance") and PromptServer.instance is not None:
             server_instance = PromptServer.instance
             if hasattr(server_instance, "app"):
-                if lora_setup_plugin:
-                    lora_setup_plugin(server_instance)  # 调用 lora_preview 的注册逻辑
-                return
+                # 检查路由表是否冻结（首次启动为 False）
+                if not server_instance.app.router.frozen:
+                    if lora_setup_plugin:
+                        lora_setup_plugin(server_instance)
+                        print("[CommonExtension] 首次启动：路由注册成功")
+                else:
+                    print("[CommonExtension] 路由表已冻结，跳过注册")
     except Exception as e:
-        print(f"[CommonExtension] 路由注册失败 {e}")
+        print(f"[CommonExtension] 注册失败：{e}")
 
-
-# 启动延迟任务
+# 首次启动时执行
 if __name__ != "__main__":
-    try:
-        delayed_register()
-    except Exception as e:
-        print(f"[CommonExtension] {e}")
+    register_routes()
 
-# 导出必要变量
+# 导出变量
 WEB_DIRECTORY = "./js"
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]
