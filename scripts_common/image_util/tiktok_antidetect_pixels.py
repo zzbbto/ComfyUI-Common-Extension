@@ -339,11 +339,11 @@ class TikTokAntiDetectPixel:
         processed_tensor = torch.from_numpy(processed_np / 255.0).float().to(device)
         return original_img * (1 - strength) + processed_tensor * strength
 
-# 节点映射
-NODE_CLASS_MAPPINGS = {
-    "TikTokAntiDetectPixel": TikTokAntiDetectPixel,
-}
+# # 节点映射
+# NODE_CLASS_MAPPINGS = {
+#     "TikTokAntiDetectPixel": TikTokAntiDetectPixel,
+# }
 
-NODE_DISPLAY_NAME_MAPPINGS = {
-    "TikTokAntiDetectPixel": "抖音AI检测对抗像素处理器",
-}
+# NODE_DISPLAY_NAME_MAPPINGS = {
+#     "TikTokAntiDetectPixel": "抖音AI检测对抗像素处理器",
+# }

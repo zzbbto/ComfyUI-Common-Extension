@@ -293,11 +293,11 @@ class TikTokAntiDetectVideo:
             return torch.cat([processed_tensor, other_channels], dim=1)
         return processed_tensor
 
-# 节点映射
-NODE_CLASS_MAPPINGS = {
-    "TikTokAntiDetectVideo": TikTokAntiDetectVideo,
-}
+# # 节点映射
+# NODE_CLASS_MAPPINGS = {
+#     "TikTokAntiDetectVideo": TikTokAntiDetectVideo,
+# }
 
-NODE_DISPLAY_NAME_MAPPINGS = {
-    "TikTokAntiDetectVideo": "抖音AI检测对抗视频处理器",
-}
+# NODE_DISPLAY_NAME_MAPPINGS = {
+#     "TikTokAntiDetectVideo": "抖音AI检测对抗视频处理器",
+# }

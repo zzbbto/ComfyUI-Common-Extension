@@ -544,11 +544,11 @@ class ZhuqueAntiDetectEnhancer:
         
         return images
 
-# 节点映射
-NODE_CLASS_MAPPINGS = {
-    "ZhuqueAntiDetectEnhancer": ZhuqueAntiDetectEnhancer,
-}
+# # 节点映射
+# NODE_CLASS_MAPPINGS = {
+#     "ZhuqueAntiDetectEnhancer": ZhuqueAntiDetectEnhancer,
+# }
 
-NODE_DISPLAY_NAME_MAPPINGS = {
-    "ZhuqueAntiDetectEnhancer": "朱雀AI检测对抗增强器",
-}
+# NODE_DISPLAY_NAME_MAPPINGS = {
+#     "ZhuqueAntiDetectEnhancer": "朱雀AI检测对抗增强器",
+# }
