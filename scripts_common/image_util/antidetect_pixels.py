@@ -4,7 +4,7 @@ import cv2
 import random
 import torchvision.transforms.functional as TF
 from scipy.ndimage import gaussian_filter
-from .tiktok_antidetect_utils import TikTokAntiDetectUtils
+from .antidetect_utils import TikTokAntiDetectUtils
 import comfy.utils  # 导入ComfyUI进度条工具
 import hashlib
 
