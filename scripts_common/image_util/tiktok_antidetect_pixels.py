@@ -9,7 +9,7 @@ import comfy.utils  # 导入ComfyUI进度条工具
 import hashlib
 
 
-class TikTokAntiDetectPixel:
+class AntiDetectPixel:
     """像素空间的抖音AI检测对抗处理器 (2025.6优化版)"""
     @classmethod
     def INPUT_TYPES(cls):
@@ -339,11 +339,11 @@ class TikTokAntiDetectPixel:
         processed_tensor = torch.from_numpy(processed_np / 255.0).float().to(device)
         return original_img * (1 - strength) + processed_tensor * strength
 
-# # 节点映射
-# NODE_CLASS_MAPPINGS = {
-#     "TikTokAntiDetectPixel": TikTokAntiDetectPixel,
-# }
+# 节点映射
+NODE_CLASS_MAPPINGS = {
+    "AntiDetectPixel": AntiDetectPixel,
+}
 
-# NODE_DISPLAY_NAME_MAPPINGS = {
-#     "TikTokAntiDetectPixel": "抖音AI检测对抗像素处理器",
-# }
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "AntiDetectPixel": "AI检测对抗测试",
+}

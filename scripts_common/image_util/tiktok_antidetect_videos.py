@@ -9,7 +9,7 @@ from .tiktok_antidetect_utils import TikTokAntiDetectUtils
 import comfy.utils  # 导入ComfyUI进度条工具
 
 
-class TikTokAntiDetectVideo:
+class AntiDetectVideo:
     """潜在空间的抖音AI检测对抗处理器 (2025.6优化版)"""
     @classmethod
     def INPUT_TYPES(cls):
@@ -293,11 +293,11 @@ class TikTokAntiDetectVideo:
             return torch.cat([processed_tensor, other_channels], dim=1)
         return processed_tensor
 
-# # 节点映射
-# NODE_CLASS_MAPPINGS = {
-#     "TikTokAntiDetectVideo": TikTokAntiDetectVideo,
-# }
+# 节点映射
+NODE_CLASS_MAPPINGS = {
+    "AntiDetectVideo": AntiDetectVideo,
+}
 
-# NODE_DISPLAY_NAME_MAPPINGS = {
-#     "TikTokAntiDetectVideo": "抖音AI检测对抗视频处理器",
-# }
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "AntiDetectVideo": "AI检测对抗测试",
+}
