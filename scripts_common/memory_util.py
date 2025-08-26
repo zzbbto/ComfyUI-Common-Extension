@@ -418,19 +418,11 @@ class MemoryCleaner:
                 print(f"释放显存: {freed:.2f} MB (前: {pre:.2f} MB → 后: {post:.2f} MB)")
             else:
                 print("⚠️ 终极清理失败，但已尝试恢复基本功能")
-                print(f"当前显存: {post:.2f} MB")
                 print("建议重启ComfyUI以完全恢复")
         else:
             freed = pre - post
             print(f"✅ {clean_intensity}级清理完成!")
             print(f"释放显存: {freed:.2f} MB (前: {pre:.2f} MB → 后: {post:.2f} MB)")
-            
-            if freed < 100:
-                print("\n⚠️ 清理效果有限，建议:")
-                print("- 使用更高强度清理")
-                print("- 检查工作流资源释放")
-            elif freed > 500:
-                print("\n✅ 显存释放效果显著")
         
         print("="*90 + "\n")
 
