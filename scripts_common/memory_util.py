@@ -10,11 +10,14 @@ from memory_clear import (
     check_psutil, 
     unload_models, 
     perform_full_cleanup,
-    ultimate_cleanup,
     get_system_vram_usage,
     get_total_gpu_memory
 )
 from types import ModuleType, FunctionType
+import psutil
+import platform
+import subprocess
+from ctypes import wintypes
 
 # ========================== 内存分析器 ==========================
 
@@ -23,6 +26,77 @@ class AnyType(str):
     def __ne__(self, __value: object) -> bool: return False
 
 any = AnyType("*")
+
+def get_ram_usage():
+    memory = psutil.virtual_memory()
+    return memory.percent, memory.available / (1024 * 1024) 
+
+def clean_ram(clean_file_cache, clean_processes, clean_dlls, retry_times):
+    try:
+        current_usage, available_mb = get_ram_usage()
+        print(f"开始清理RAM - 当前使用率: {current_usage:.1f}%, 可用: {available_mb:.1f}MB")
+        
+        system = platform.system()
+        for attempt in range(retry_times):
+            
+            if clean_file_cache:
+                try:
+                    if system == "Windows":
+                        ctypes.windll.kernel32.SetSystemFileCacheSize(-1, -1, 0)
+                    elif system == "Linux":
+                        try:
+                            subprocess.run(["sudo", "sh", "-c", "echo 3 > /proc/sys/vm/drop_caches"], 
+                                            check=False, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
+                            print("使用sudo清理缓存成功")
+                        except Exception as sudo_e:
+                            print(f"使用sudo清理缓存失败: {str(sudo_e)}")
+                            try:
+                                subprocess.run(["sudo", "sysctl", "vm.drop_caches=3"],
+                                                check=False, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
+                                print("使用sysctl清理缓存成功")
+                            except Exception as sysctl_e:
+                                print(f"使用sysctl清理缓存失败: {str(sysctl_e)}")
+                                print("请尝试在终端执行: 'sudo sh -c \"echo 3 > /proc/sys/vm/drop_caches\"'")
+                except Exception as e:
+                    print(f"清理文件缓存失败: {str(e)}")
+            
+            if clean_processes:
+                cleaned_processes = 0
+                if system == "Windows":
+                    for process in psutil.process_iter(['pid', 'name']):
+                        try:
+                            handle = ctypes.windll.kernel32.OpenProcess(
+                                wintypes.DWORD(0x001F0FFF),
+                                wintypes.BOOL(False),
+                                wintypes.DWORD(process.info['pid'])
+                            )
+                            ctypes.windll.psapi.EmptyWorkingSet(handle)
+                            ctypes.windll.kernel32.CloseHandle(handle)
+                            cleaned_processes += 1
+                        except:
+                            continue
+                elif system == "Linux":
+                    cleaned_processes = 0
+
+            if clean_dlls:
+                try:
+                    if system == "Windows":
+                        ctypes.windll.kernel32.SetProcessWorkingSetSize(-1, -1, -1)
+                    elif system == "Linux":
+
+                        subprocess.run(["sync"], check=True)
+                except Exception as e:
+                    print(f"释放内存资源失败: {str(e)}")
+
+            time.sleep(1)
+            current_usage, available_mb = get_ram_usage()
+            print(f"清理后内存使用率: {current_usage:.1f}%, 可用: {available_mb:.1f}MB")
+
+        print(f"清理完成 - 最终内存使用率: {current_usage:.1f}%, 可用: {available_mb:.1f}MB")
+
+    except Exception as e:
+        print(f"RAM清理过程出错: {str(e)}")
+        
 
 class MemoryAnalyzer:
     def __init__(self):
@@ -102,7 +176,7 @@ class MemoryAnalyzer:
                 print(f"- {ref_type}: 持有 {total_size/1024**2:.2f} MB 显存")
         
             # 返回大型张量列表 + 总扫描内存 + 小型张量数量
-            return large_tensors, total_scanned_memory, small_tensor_count
+        return large_tensors, total_scanned_memory, small_tensor_count
 
     def _classify_tensors(self, tensors: List[torch.Tensor]) -> Dict[str, List[Tuple[torch.Tensor, float]]]:
         model_components = defaultdict(list)
@@ -188,16 +262,14 @@ class IntegratedMemoryAnalyzer(MemoryAnalyzer):
         print("\n" + "="*50 + f" 第{self.numCount}次分析开始 " + "="*50)
         
         # 执行清理操作（如果启用）
-        if unload:
-            unload_models()
         if clean_before:
             print("♻️ 执行清理操作...")
-            _, _, pre_vram, post_vram = perform_full_cleanup(
-                unload=False,  # 模型已经卸载
+            pre_ram, post_ram, pre_vram, post_vram = perform_full_cleanup(
+                unload=unload, 
                 intensity=clean_intensity
             )
-            vram_diff_mb = pre_vram - post_vram
-            print(f"✅ 清理完成, 释放 {vram_diff_mb:.2f}MB 显存")
+            _print_clean_report(pre_ram, post_ram, clean_intensity)
+            clean_ram(True,True,True,1)
         else:
             print("⏩ 跳过清理操作")
             post_vram = get_system_vram_usage()
@@ -301,19 +373,19 @@ class IntegratedMemoryAnalyzer(MemoryAnalyzer):
     def _print_optimization_suggestions(self, 
                                     model_components: Dict[str, List[Tuple[torch.Tensor, float]]],
                                     system_vram: float, pytorch_vram: float):
-            print("\n💡 优化建议:")
-            current_vram_mb = torch.cuda.memory_allocated() / (1024**2)
-            if current_vram_mb > 8000:
-                print("- 显存使用接近极限，建议:")
-                print("  - 减少批量大小")
-                print("  - 使用低精度模式 (FP16)")
-                print("  - 优化工作流程")
-            if "LatentSpace" in model_components:
-                print("- 检测到潜在空间张量，建议使用VAE缩小模式")
-            if "ImageData" in model_components:
-                print("- 检测到图像数据张量，建议使用图像压缩节点")
-            if "UNetFeature" in model_components:
-                print("- 检测到UNet特征图，建议使用分块推理")
+            # print("\n💡 优化建议:")
+            # current_vram_mb = torch.cuda.memory_allocated() / (1024**2)
+            # if current_vram_mb > 8000:
+            #     print("- 显存使用接近极限，建议:")
+            #     print("  - 减少批量大小")
+            #     print("  - 使用低精度模式 (FP16)")
+            #     print("  - 优化工作流程")
+            # if "LatentSpace" in model_components:
+            #     print("- 检测到潜在空间张量，建议使用VAE缩小模式")
+            # if "ImageData" in model_components:
+            #     print("- 检测到图像数据张量，建议使用图像压缩节点")
+            # if "UNetFeature" in model_components:
+            #     print("- 检测到UNet特征图，建议使用分块推理")
 
             if system_vram > 0 and pytorch_vram > 0:
                 context_usage = system_vram - pytorch_vram
@@ -354,12 +426,6 @@ class IntegratedMemoryAnalyzer(MemoryAnalyzer):
                         print(f"\n🧩 显存碎片率: {fragmentation*100:.2f}%")
                         print(f"- 总空闲显存: {free_bytes/1024**2:.2f} MB")
                         print(f"- 最大空闲块: {max_free_block/1024**2:.2f} MB")
-                        if fragmentation > 0.5:
-                            print("⚠️ 高碎片率! 建议:")
-                            print("  - 使用高强度清理")
-                            print("  - 重启ComfyUI")
-                        elif fragmentation > 0.3:
-                            print("💡 中等碎片率，可能影响大模型加载")
                     else:
                         print("\n🧩 无空闲显存可用于碎片分析")
         except Exception as e:
@@ -384,47 +450,32 @@ class MemoryCleaner:
     CATEGORY = "CommonExtension/debug"
 
     def clean(self, anything: Any, clean_intensity: int, unload: bool) -> Tuple[Any]:
-        
-        if unload:
-            unload_models()
 
-        if clean_intensity == 5:
-            # 终极清理有特殊处理
-            print("🚀 执行终极内存清理...")
-            pre_ram = get_system_vram_usage()
-            result = ultimate_cleanup(warn=False)
-            post_ram = get_system_vram_usage()
-            
-            self._print_clean_report(pre_ram, post_ram, result, clean_intensity)
-        else:
-            # 常规清理
-            print(f"🧹 执行{clean_intensity}级内存清理...")
-            pre_ram, post_ram, pre_vram, post_vram = perform_full_cleanup(
-                unload=False,
-                intensity=clean_intensity
-            )
-            freed = pre_vram - post_vram
-            self._print_clean_report(pre_vram, post_vram, freed, clean_intensity)
-        
+        print(f"🧹 执行{clean_intensity}级显存清理...")
+        pre_ram, post_ram, pre_vram, post_vram = perform_full_cleanup(
+            unload=unload,
+            intensity=clean_intensity
+        )
+        _print_clean_report(pre_ram, post_ram, clean_intensity)
+        clean_ram(True,True,True,1)
         return (anything,)
     
-    def _print_clean_report(self, pre: float, post: float, result: float, clean_intensity: int) -> None:
-        print("\n" + "="*50 + " 内存清理报告 " + "="*50)
-        
-        if clean_intensity == 5:
-            if result is not None:
-                freed = pre - post
-                print(f"✅ 终极清理成功完成!")
-                print(f"释放显存: {freed:.2f} MB (前: {pre:.2f} MB → 后: {post:.2f} MB)")
-            else:
-                print("⚠️ 终极清理失败，但已尝试恢复基本功能")
-                print("建议重启ComfyUI以完全恢复")
-        else:
-            freed = pre - post
-            print(f"✅ {clean_intensity}级清理完成!")
-            print(f"释放显存: {freed:.2f} MB (前: {pre:.2f} MB → 后: {post:.2f} MB)")
-        
-        print("="*90 + "\n")
+def _print_clean_report(pre: float, post: float, clean_intensity: int) -> None:
+    # 计算释放的显存
+    freed = pre - post
+    # 获取总GPU内存
+    total_gpu_memory = get_total_gpu_memory()
+    # 计算百分比（保留一位小数）
+    pre_percent = (pre / total_gpu_memory) * 100 if total_gpu_memory > 0 else 0
+    post_percent = (post / total_gpu_memory) * 100 if total_gpu_memory > 0 else 0
+    freed_percent = (freed / total_gpu_memory) * 100 if total_gpu_memory > 0 else 0
+    # 打印报告，使用对称分隔符
+    print("\n" + "="*40 + " 显存清理报告 " + "="*40)
+    print(f"✅ {clean_intensity}级清理完成!")
+    print(f"释放前: {pre:.1f} MB（{pre_percent:.1f}%） → 释放后: {post:.1f} MB（{post_percent:.1f}%）")
+    print(f"释放总显存: {freed:.1f} MB（{freed_percent:.1f}%）")
+    print("="*92 + "\n")  # 保持与标题行长度一致（40+11+40=91，加1调整为92）
+
 
 # ========================== 节点注册 ==========================
 
@@ -434,8 +485,8 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "IntegratedMemoryAnalyzer": "集成内存分析器",
-    "MemoryCleaner": "内存清理器"
+    "IntegratedMemoryAnalyzer": "显存内存分析器",
+    "MemoryCleaner": "显存内存清理器"
 }
 
 __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']

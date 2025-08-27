@@ -1,10 +1,8 @@
 import torch
 import gc
 import sys
-import os
 import time
 import ctypes
-import traceback
 from comfy import model_management
 from typing import Any, Optional, Tuple
 from server import PromptServer
@@ -136,88 +134,88 @@ def perform_full_cleanup(unload: bool = True, intensity: int = 4) -> Tuple[float
     post_ram = get_system_vram_usage()
     return pre_ram, post_ram, pre_vram, post_vram
 
-def ultimate_cleanup(warn: bool = True, reinit: bool = True) -> Optional[float]:
-    """
-    终极显存清理：完全释放CUDA上下文和所有显存
-    返回：清理后剩余显存(MB)或None(如果失败)
-    """
-    if warn:
-        print("⚠️"*50)
-        print("警告: 即将执行终极显存清理!")
-        print("此操作将完全释放CUDA上下文和所有显存")
-        print("可能导致当前工作流中的模型和状态丢失")
-        print("仅在严重内存泄漏或需要完全重置时使用")
-        print("⚠️"*50)
-        time.sleep(3)  # 给用户时间阅读警告
+# def ultimate_cleanup(warn: bool = True, reinit: bool = True) -> Optional[float]:
+#     """
+#     终极显存清理：完全释放CUDA上下文和所有显存
+#     返回：清理后剩余显存(MB)或None(如果失败)
+#     """
+#     if warn:
+#         print("⚠️"*50)
+#         print("警告: 即将执行终极显存清理!")
+#         print("此操作将完全释放CUDA上下文和所有显存")
+#         print("可能导致当前工作流中的模型和状态丢失")
+#         print("仅在严重内存泄漏或需要完全重置时使用")
+#         print("⚠️"*50)
+#         time.sleep(3)  # 给用户时间阅读警告
     
-    try:
-        # 1. 记录初始显存状态
-        initial_vram = get_system_vram_usage()
+#     try:
+#         # 1. 记录初始显存状态
+#         initial_vram = get_system_vram_usage()
         
-        # 2. 卸载所有模型
-        unload_models()
+#         # 2. 卸载所有模型
+#         unload_models()
         
-        # 3. 执行最高强度清理
-        clear_memory(intensity=5)
+#         # 3. 执行最高强度清理
+#         clear_memory(intensity=5)
         
-        # 4. 使用PyTorch内部重置
-        if hasattr(torch.cuda, '_reset'):
-            torch.cuda._reset()
-            print("✅ PyTorch CUDA完全重置完成")
-        else:
-            print("⚠️ PyTorch版本不支持完全重置")
+#         # 4. 使用PyTorch内部重置
+#         if hasattr(torch.cuda, '_reset'):
+#             torch.cuda._reset()
+#             print("✅ PyTorch CUDA完全重置完成")
+#         else:
+#             print("⚠️ PyTorch版本不支持完全重置")
         
-        # 5. 系统级CUDA驱动清理
-        _reset_cuda_driver()
+#         # 5. 系统级CUDA驱动清理
+#         _reset_cuda_driver()
         
-        # 6. 最终清理
-        for _ in range(3):
-            gc.collect()
-            torch.cuda.empty_cache()
+#         # 6. 最终清理
+#         for _ in range(3):
+#             gc.collect()
+#             torch.cuda.empty_cache()
         
-        # 7. 重新初始化CUDA（可选）
-        if reinit:
-            torch.cuda.init()
-            print("✅ CUDA重新初始化完成")
+#         # 7. 重新初始化CUDA（可选）
+#         if reinit:
+#             torch.cuda.init()
+#             print("✅ CUDA重新初始化完成")
         
-        # 8. 报告结果
-        final_vram = get_system_vram_usage()
-        freed = initial_vram - final_vram
-        print(f"♻️ 显存释放结果: 初始 {initial_vram:.1f}MB -> 最终 {final_vram:.1f}MB | 释放 {freed:.1f}MB")
+#         # 8. 报告结果
+#         final_vram = get_system_vram_usage()
+#         freed = initial_vram - final_vram
+#         print(f"♻️ 显存释放结果: 初始 {initial_vram:.1f}MB -> 最终 {final_vram:.1f}MB | 释放 {freed:.1f}MB")
         
-        return final_vram
-    except Exception as e:
-        print(f"⚠️ 终极清理失败: {str(e)}")
-        traceback.print_exc()
-        return None
+#         return final_vram
+#     except Exception as e:
+#         print(f"⚠️ 终极清理失败: {str(e)}")
+#         traceback.print_exc()
+#         return None
 
 # ========================== 辅助函数 ==========================
 
-def _clean_nvidia_driver_cache() -> None:
-    """清理NVIDIA驱动缓存"""
-    # Windows
-    if sys.platform == 'win32':
-        cache_path = os.path.join(os.environ.get('LOCALAPPDATA', ''), 'NVIDIA', 'DXCache')
-        if os.path.exists(cache_path):
-            for file in os.listdir(cache_path):
-                try:
-                    file_path = os.path.join(cache_path, file)
-                    # 只删除缓存文件，不删除目录
-                    if os.path.isfile(file_path) and file.endswith('.bin'):
-                        os.remove(file_path)
-                except Exception as e:
-                    print(f"⚠️ 删除缓存文件失败: {file_path}, {str(e)}")
-    # Linux
-    elif sys.platform == 'linux':
-        cache_path = '/var/cache/nvidia'
-        if os.path.exists(cache_path):
-            for file in os.listdir(cache_path):
-                try:
-                    file_path = os.path.join(cache_path, file)
-                    if os.path.isfile(file_path) and file.endswith('.bin'):
-                        os.remove(file_path)
-                except Exception as e:
-                    print(f"⚠️ 删除缓存文件失败: {file_path}, {str(e)}")
+# def _clean_nvidia_driver_cache() -> None:
+#     """清理NVIDIA驱动缓存"""
+#     # Windows
+#     if sys.platform == 'win32':
+#         cache_path = os.path.join(os.environ.get('LOCALAPPDATA', ''), 'NVIDIA', 'DXCache')
+#         if os.path.exists(cache_path):
+#             for file in os.listdir(cache_path):
+#                 try:
+#                     file_path = os.path.join(cache_path, file)
+#                     # 只删除缓存文件，不删除目录
+#                     if os.path.isfile(file_path) and file.endswith('.bin'):
+#                         os.remove(file_path)
+#                 except Exception as e:
+#                     print(f"⚠️ 删除缓存文件失败: {file_path}, {str(e)}")
+#     # Linux
+#     elif sys.platform == 'linux':
+#         cache_path = '/var/cache/nvidia'
+#         if os.path.exists(cache_path):
+#             for file in os.listdir(cache_path):
+#                 try:
+#                     file_path = os.path.join(cache_path, file)
+#                     if os.path.isfile(file_path) and file.endswith('.bin'):
+#                         os.remove(file_path)
+#                 except Exception as e:
+#                     print(f"⚠️ 删除缓存文件失败: {file_path}, {str(e)}")
 
 def _release_cuda_caches() -> None:
     """释放CUDA内部缓存"""
