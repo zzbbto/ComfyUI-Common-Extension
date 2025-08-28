@@ -19,20 +19,17 @@ logging.basicConfig(
 )
 logger = logging.getLogger("ModelBlockLogger")
 
-# 通用配置 - 新增Flux特有的块属性
 UNET_CANDIDATES = ['unet', 'diffusion_model', 'model', 'denoise_fn', 'network', 'transformer_unet']
 BLOCK_ATTR_CANDIDATES = ['blocks', 'transformer_blocks', 'down', 'up', 'mid', 'layers', 'resblocks', 
-                         'single_blocks', 'double_blocks']  # 新增Flux特有的块属性
-AUTO_INIT_PERCENT = 10
-AUTO_SWAP_STEP = 10
+                         'single_blocks', 'double_blocks']
+AUTO_INIT_PERCENT = 20
+AUTO_SWAP_STEP = 20
 DEFAULT_TXT_EMB_ATTR = "text_embedding"
 DEFAULT_IMG_EMB_ATTR = "img_emb"
-# 新增：vr_am_single计算相关常量（避免极端值）
-MIN_VR_AM_SINGLE = 40  # 最小建议值（MB），防止异常计算结果
+MIN_VR_AM_SINGLE = 40
 
 
 def extract_flux_core(flux_model):
-    """提取Flux模型核心结构（关键修复：针对实际Flux类型）"""
     if not hasattr(flux_model, '__class__') or flux_model.__class__.__name__ != "Flux":
         return None
     
@@ -53,8 +50,6 @@ def extract_flux_core(flux_model):
 
 
 def find_unet_component(base_model):
-    """修复：优先处理Flux模型的diffusion_model（实际类型为Flux）"""
-    # 1. 处理Flux模型的diffusion_model（类型为Flux）
     if isinstance(base_model, Flux) and hasattr(base_model, 'diffusion_model'):
         logger.info("📌 检测到Flux模型，优先处理diffusion_model（类型为Flux）")
         flux_model = getattr(base_model, 'diffusion_model')
@@ -65,7 +60,6 @@ def find_unet_component(base_model):
             elif _check_component(flux_model):
                 return flux_model, "diffusion_model（Flux自身）"
     
-    # 2. 通用UNet查找逻辑
     for attr in UNET_CANDIDATES:
         if hasattr(base_model, attr):
             candidate = getattr(base_model, attr)
@@ -80,12 +74,10 @@ def find_unet_component(base_model):
 
 
 def _check_component(candidate):
-    """检查组件是否包含有效块结构（支持Flux的single_blocks和double_blocks）"""
     if not candidate:
         return False
     
     candidate_attrs = dir(candidate)
-    # 检查Flux特有块
     has_flux_blocks = any(attr in candidate_attrs for attr in ['single_blocks', 'double_blocks'])
     if has_flux_blocks:
         try:
@@ -98,7 +90,6 @@ def _check_component(candidate):
         except Exception as e:
             logger.debug(f"检查Flux块时出错：{str(e)}")
     
-    # 检查传统块
     for b_attr in BLOCK_ATTR_CANDIDATES:
         if b_attr in candidate_attrs:
             sub_comp = getattr(candidate, b_attr)
@@ -109,14 +100,12 @@ def _check_component(candidate):
 
 
 def find_blocks_attribute(unet):
-    """修复：专门处理Flux的single_blocks和double_blocks结构"""
     block_info = []
     
     def _recursive_find_blocks(obj, parent_path=""):
         if not obj or isinstance(obj, (int, float, str, bool)):
             return
         
-        # 优先处理Flux特有块
         for flux_attr in ['single_blocks', 'double_blocks']:
             if hasattr(obj, flux_attr):
                 flux_obj = getattr(obj, flux_attr)
@@ -129,7 +118,6 @@ def find_blocks_attribute(unet):
                         logger.debug(f"✅ 找到Flux块：{item_path}（类型：{type(item).__name__}）")
                 _recursive_find_blocks(flux_obj, flux_path)
         
-        # 处理传统块
         for b_attr in BLOCK_ATTR_CANDIDATES:
             if hasattr(obj, b_attr) and b_attr not in ['single_blocks', 'double_blocks']:
                 b_obj = getattr(obj, b_attr)
@@ -155,44 +143,33 @@ def find_blocks_attribute(unet):
 
 
 def calculate_vram_metrics():
-    """保持显存计算逻辑，新增峰值显存获取（用于生成后计算）"""
     try:
         used = get_system_vram_usage()
         total = get_total_gpu_memory()
     except Exception as e:
         logger.debug(f"外部显存函数失败，用torch备用：{str(e)}")
         if torch.cuda.is_available():
-            used = torch.cuda.memory_allocated() / (1024 ** 2)  # 当前已分配显存
-            peak_used = torch.cuda.max_memory_allocated() / (1024 ** 2)  # 峰值显存（新增）
+            used = torch.cuda.memory_allocated() / (1024 ** 2)
             total = torch.cuda.get_device_properties(0).total_memory / (1024 ** 2)
         else:
             used = -1
-            peak_used = -1
             total = -1
-    else:
-        # 若外部函数无峰值，用torch补充（兼容旧版本memory_clear）
-        peak_used = torch.cuda.max_memory_allocated() / (1024 ** 2) if torch.cuda.is_available() else -1
 
-    # 格式统一（转为整数，避免小数）
     used = max(-1, int(used)) if used is not None else -1
-    peak_used = max(-1, int(peak_used)) if peak_used is not None else -1
     total = max(1, int(total)) if total is not None and total > 0 else -1
     percent = (used / total * 100) if (total > 0 and used >= 0) else -1.0
     
     if used == -1:
         logger.warning("⚠️  无法获取当前显存占用")
-    if peak_used == -1:
-        logger.warning("⚠️  无法获取显存峰值")
     if total == -1:
         logger.warning("⚠️  无法获取总显存")
     
-    return used, peak_used, total, round(max(0.0, min(percent, 100.0)), 1)  # 新增返回peak_used
+    return used, total, round(max(0.0, min(percent, 100.0)), 1)
 
 
 def get_effective_swap_percent(input_percent):
-    """保持交换百分比处理"""
     if input_percent == -1:
-        logger.info(f"🔄 启用自动模式，初始交换百分比={AUTO_INIT_PERCENT}%")
+        logger.info(f"🔄 启用自动模式，初始交换百分比={AUTO_INIT_PERCENT}%（显存超标时生效）")
         return AUTO_INIT_PERCENT, True
     clamped_percent = max(0, min(input_percent, 100))
     if clamped_percent != input_percent:
@@ -201,40 +178,26 @@ def get_effective_swap_percent(input_percent):
     return clamped_percent, False
 
 
-# 新增：vr_am_single建议值计算核心函数
 def calculate_suggested_vr_am_single(pre_gen_used, gen_peak_used, batch_size):
-    """
-    根据实际生成数据计算vr_am_single建议值
-    :param pre_gen_used: 生成前基础显存（MB）- 模型加载+块交换后
-    :param gen_peak_used: 生成时峰值显存（MB）
-    :param batch_size: 批次大小
-    :return: 建议的vr_am_single值（MB）
-    """
-    # 1. 基础校验（排除异常数据）
     if not (torch.cuda.is_available() and pre_gen_used > 0 and gen_peak_used > 0 and batch_size > 0):
         logger.warning("⚠️ 缺少有效计算数据（CUDA未启用/显存数据异常/批次为0），使用经验默认值")
-        return 80  # 基础默认值
+        return 80
     
-    # 2. 计算单张图片的额外显存消耗（峰值-基础）
     extra_memory = gen_peak_used - pre_gen_used
     if extra_memory <= 0:
         logger.warning(f"⚠️ 显存差值异常（{gen_peak_used} - {pre_gen_used} = {extra_memory}），使用经验默认值")
         return 80
     
-    # 3. 按批次大小分摊（单张增量）
-    base_vr_am = extra_memory // batch_size  # 向下取整，避免高估
+    base_vr_am = extra_memory // batch_size
     logger.info(f"📈 基础计算：生成额外显存={extra_memory}MB，批次={batch_size} → 单张基础增量={base_vr_am}MB")
     
-    # 4. 最终限制（避免过小/过大）
-    suggested = max(MIN_VR_AM_SINGLE, min(base_vr_am, 1000))  # 限制在40-1000MB之间
+    suggested = max(MIN_VR_AM_SINGLE, min(base_vr_am, 1000))
     return suggested
 
 
 def estimate_memory_usage(vr_am_single, batch_size):
-    """更新：纳入分辨率（后续可扩展更精准估算）"""
     if vr_am_single <= 0 or batch_size <= 0:
         return 0
-    # 基础估算（后续可按分辨率平方比优化）
     estimated_memory = vr_am_single * batch_size
     return estimated_memory
 
@@ -261,7 +224,6 @@ class ModelBlockLogger:
             logger.info(f"\n=== 模型结构日志（{model_cls_name}）===")
             logger.info(f"模型类路径: {base_model.__class__.__module__}.{model_cls_name}")
             
-            # Flux专用调试
             if isinstance(base_model, Flux):
                 logger.info("📋 Flux模型专用调试信息：")
                 if hasattr(base_model, 'diffusion_model'):
@@ -278,11 +240,9 @@ class ModelBlockLogger:
                 else:
                     logger.info(f"  未找到diffusion_model属性")
             
-            # 基础属性打印
             base_attrs = [a for a in dir(base_model) if not a.startswith('_')]
             logger.info(f"📋 base_model核心属性：{base_attrs}")
             
-            # UNet识别
             found_unet, found_unet_attr = find_unet_component(base_model)
             if found_unet:
                 logger.info(f"✅ 识别到UNet组件：{found_unet_attr}")
@@ -315,14 +275,14 @@ class ModelBlockSwap:
             "required": {
                 "model": ("MODEL",),
                 "model_type": (["Auto", "WAN21", "QwenImage", "Flux"], {"default": "Auto", "tooltip": "模型类型"}),
-                "blocks_swap_percent": ("INT", {"default": -1, "min": -1, "max": 100, "step": 1, "tooltip": "-1=自动"}),
+                "blocks_swap_percent": ("INT", {"default": -1, "min": -1, "max": 100, "step": 1, "tooltip": "块交换比例(-1=自动)，控制移至CPU的块占比"}),
                 "vram_threshold_percent": ("INT", {"default": 90, "min": 10, "max": 95, "step": 1, "tooltip": "自动模式阈值"}),
                 "offload_img_emb": ("BOOLEAN", {"default": False, "tooltip": "卸载图像嵌入层"}),
                 "offload_txt_emb": ("BOOLEAN", {"default": False, "tooltip": "卸载文本嵌入层"}),
                 "use_non_blocking": ("BOOLEAN", {"default": False, "tooltip": "非阻塞传输"}),
             },
             "optional": {
-                "vr_am_single": ("INT", {"default": 80, "min": 0, "max": 1000, "step": 2, "tooltip": "单张额外显存"}),
+                "vr_am_single": ("INT", {"default": 100, "min": 0, "max": 1000, "step": 2, "tooltip": "单张额外显存"}),
                 "batch_size": ("INT", {"default": 1, "min": 1, "max": 9999, "step": 1, "tooltip": "批次大小（≥1）"}),
             }
         }
@@ -333,10 +293,9 @@ class ModelBlockSwap:
     def set_callback(
         self, model: ModelPatcher, model_type, blocks_swap_percent, 
         vram_threshold_percent, offload_txt_emb, offload_img_emb, use_non_blocking,
-        vr_am_single=80, batch_size=1
+        vr_am_single=100, batch_size=1
     ):
         current_swap_pct, is_auto_mode = get_effective_swap_percent(blocks_swap_percent)
-        vram_threshold = max(10, min(vram_threshold_percent, 95)) if is_auto_mode else None
         estimated_memory = estimate_memory_usage(vr_am_single, batch_size)
 
         # 新增：存储生成前后的显存数据（跨回调使用）
@@ -344,21 +303,28 @@ class ModelBlockSwap:
         gen_peak_used = -1  # 生成时峰值显存
 
         def swap_blocks(model: ModelPatcher, device_to, lowvram_model_memory, force_patch_weights, full_load):
-            nonlocal current_swap_pct, is_auto_mode, vram_threshold, estimated_memory
+            nonlocal current_swap_pct, is_auto_mode, estimated_memory
             nonlocal pre_gen_used, gen_peak_used  # 声明为非局部变量
             base_model = model.model
             actual_model_type = model_type if model_type != "Auto" else type(base_model).__name__
             main_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
             offload_device = model.offload_device or torch.device('cpu')
 
-            # 1. 阈值调整（基于预估显存）
-            adjusted_threshold = vram_threshold
-            if estimated_memory > 0:
-                _, _, total_vram, _ = calculate_vram_metrics()
-                if total_vram > 0:
-                    estimated_percent = (estimated_memory / total_vram) * 100
-                    adjusted_threshold = max(10, min(vram_threshold - estimated_percent, 95))
-                    logger.info(f"📊 阈值调整：原{vram_threshold}% → 新{adjusted_threshold:.1f}%（预估图片显存{estimated_memory:.2f}MB）")
+            # ---------------------- 核心修改1：仅自动模式处理阈值 ----------------------
+            adjusted_threshold = None
+            if is_auto_mode:
+                # 自动模式：基于原始参数初始化阈值（避免None）
+                adjusted_threshold = max(10, min(vram_threshold_percent, 95))
+                # 仅自动模式下计算预估显存调整
+                if estimated_memory > 0:
+                    _, total_vram, _ = calculate_vram_metrics()
+                    if total_vram > 0:
+                        estimated_percent = (estimated_memory / total_vram) * 100
+                        # 用调整后的阈值做减法（此时adjusted_threshold必为数值）
+                        adjusted_threshold = max(10, min(adjusted_threshold - estimated_percent, 95))
+                        logger.info(f"📊 阈值调整：原{vram_threshold_percent}% → 新{adjusted_threshold:.1f}%（预估图片显存{estimated_memory:.2f}MB）")
+                logger.info(f"📌 自动模式显存阈值：{adjusted_threshold:.1f}%")
+            # 非自动模式：不处理阈值（跳过调整逻辑）
 
             # 2. 模型结构解析（Flux优先）
             unet = None
@@ -394,45 +360,62 @@ class ModelBlockSwap:
                     logger.info(f"🔍 Flux调试：类名={flux_model.__class__.__name__}，属性={[a for a in dir(flux_model) if not a.startswith('_')]}")
                 return
 
-            # 3. 块交换执行
+            # ---------------------- 核心修改2：自动模式新增【交换前显存预检】 ----------------------
+            # 先清理缓存并获取当前显存（排除历史残留）
+            comfy.model_management.soft_empty_cache()
+            gc.collect()
+            pre_check_used, total_vram, pre_check_percent = calculate_vram_metrics()
+            logger.info(f"📋 自动模式预检：当前显存占用={pre_check_used}MB/总{total_vram}MB（{pre_check_percent}%），阈值={adjusted_threshold:.1f}%")
+            
             cycle_count = 0
             target_met = False
-            while True:
-                cycle_count += 1
-                swap_count = min(max(0, round(total_blocks * (current_swap_pct / 100))), total_blocks)
-                logger.info(f"🔄 【{actual_model_type} - 第{cycle_count}次交换】百分比={current_swap_pct}% → 交换块数={swap_count}/{total_blocks}")
+            # 预检逻辑：仅自动模式且显存已达标时，跳过交换
+            if is_auto_mode and pre_check_percent != -1 and pre_check_percent <= adjusted_threshold:
+                logger.info(f"🎉 预检通过：初始显存已低于阈值，无需执行块交换")
+                pre_gen_used = pre_check_used  # 复用预检的显存数据
+                final_swap_count = 0  # 无交换，块数为0
+            else:
+                # 3. 块交换执行（仅预检不通过时进入）
+                while True:
+                    cycle_count += 1
+                    swap_count = min(max(0, round(total_blocks * (current_swap_pct / 100))), total_blocks)
+                    logger.info(f"🔄 【{actual_model_type} - 第{cycle_count}次交换】百分比={current_swap_pct}% → 交换块数={swap_count}/{total_blocks}")
 
-                # 块迁移
-                torch.cuda.synchronize() if torch.cuda.is_available() else None
-                success_count = 0
-                for idx, block in tqdm(enumerate(blocks), total=total_blocks, desc=f"块交换（{current_swap_pct}%）"):
-                    target_dev = main_device if idx >= swap_count else offload_device
-                    try:
-                        block.to(target_dev, non_blocking=use_non_blocking)
-                        success_count += 1
-                    except Exception as e:
-                        logger.warning(f"⚠️ 块{idx}迁移失败：{str(e)}，跳过")
-                torch.cuda.synchronize() if torch.cuda.is_available() else None
+                    # 块迁移
+                    torch.cuda.synchronize() if torch.cuda.is_available() else None
+                    success_count = 0
+                    for idx, block in tqdm(enumerate(blocks), total=total_blocks, desc=f"块交换（{current_swap_pct}%）"):
+                        target_dev = main_device if idx >= swap_count else offload_device
+                        try:
+                            block.to(target_dev, non_blocking=use_non_blocking)
+                            success_count += 1
+                        except Exception as e:
+                            logger.warning(f"⚠️ 块{idx}迁移失败：{str(e)}，跳过")
+                    torch.cuda.synchronize() if torch.cuda.is_available() else None
 
-                # 清理缓存 + 记录【生成前基础显存】（关键：块交换后的显存状态）
-                comfy.model_management.soft_empty_cache()
-                gc.collect()
-                pre_gen_used, _, total_vram, pre_gen_percent = calculate_vram_metrics()
-                logger.info(f"📊 【生成前基础显存】已用{pre_gen_used}MB/总{total_vram}MB（{pre_gen_percent}%）")
+                    # 清理缓存 + 记录生成前基础显存
+                    comfy.model_management.soft_empty_cache()
+                    gc.collect()
+                    pre_gen_used, total_vram, pre_gen_percent = calculate_vram_metrics()
+                    logger.info(f"📊 【生成前基础显存】已用{pre_gen_used}MB/总{total_vram}MB（{pre_gen_percent}%）")
 
-                # 4. 交换循环终止条件
-                if not is_auto_mode:
-                    break
-                else:
-                    if pre_gen_percent != -1 and pre_gen_percent <= adjusted_threshold:
-                        logger.info(f"🎉 显存达标（{pre_gen_percent}% ≤ {adjusted_threshold:.1f}%），停止交换")
-                        target_met = True
-                        break
-                    elif current_swap_pct >= 100:
-                        logger.warning(f"⚠️ 交换百分比已拉满（100%），显存仍未达标")
+                    # ---------------------- 核心修改3：仅自动模式判断阈值终止 ----------------------
+                    if not is_auto_mode:
+                        # 非自动模式：只执行1次交换，直接退出循环
                         break
                     else:
-                        current_swap_pct = min(current_swap_pct + AUTO_SWAP_STEP, 100)
+                        # 自动模式：基于调整后的阈值判断是否终止
+                        if pre_gen_percent != -1 and pre_gen_percent <= adjusted_threshold:
+                            logger.info(f"🎉 显存达标（{pre_gen_percent}% ≤ {adjusted_threshold:.1f}%），停止交换")
+                            target_met = True
+                            break
+                        elif current_swap_pct >= 100:
+                            logger.warning(f"⚠️ 交换百分比已拉满（100%），显存仍未达标")
+                            break
+                        else:
+                            current_swap_pct = min(current_swap_pct + AUTO_SWAP_STEP, 100)
+                # 计算最终交换块数（预检不通过时）
+                final_swap_count = min(max(0, round(total_blocks * (current_swap_pct / 100))), total_blocks)
 
             # 5. 嵌入层卸载
             if offload_txt_emb or offload_img_emb:
@@ -461,12 +444,28 @@ class ModelBlockSwap:
                         logger.warning(f"❌ 未找到{emb_type}嵌入层（属性：{emb_attr}）")
 
             # 6. 交换结果日志
-            final_swap_count = min(max(0, round(total_blocks * (current_swap_pct / 100))), total_blocks)
             logger.info(f"\n=== {actual_model_type} - 块交换最终结果 ===")
-            logger.info(f"循环次数：{cycle_count}次，最终交换百分比：{current_swap_pct}%，交换块数：{final_swap_count}/{total_blocks}")
-            logger.info(f"最终基础显存：{pre_gen_used}MB/总{total_vram}MB（{pre_gen_percent}%）")
-            if estimated_memory > 0:
-                logger.info(f"预估总显存（模型+图片）：{pre_gen_percent + (estimated_memory/total_vram*100):.1f}%")
+            if is_auto_mode and pre_check_percent != -1 and pre_check_percent <= adjusted_threshold:
+                logger.info(f"循环次数：0次（预检通过，未执行交换）")
+                # 预检通过：用“预检时的模型百分比 + 图片预估百分比”
+                model_percent = pre_check_percent
+            else:
+                logger.info(f"循环次数：{cycle_count}次，最终交换百分比：{current_swap_pct}%，交换块数：{final_swap_count}/{total_blocks}")
+                # 预检不通过：用“交换后的模型百分比 + 图片预估百分比”
+                model_percent = pre_gen_percent if 'pre_gen_percent' in locals() else pre_check_percent
+
+            # 统一计算图片预估百分比（避免重复代码）
+            estimated_percent_calc = (estimated_memory / total_vram * 100) if (total_vram > 0 and estimated_memory > 0) else 0.0
+            # 计算总预估百分比（模型 + 图片）
+            total_estimated_percent = model_percent + estimated_percent_calc
+
+            # 打印最终结果（区分是否能计算总显存）
+            logger.info(f"最终基础显存（模型）：{pre_gen_used}MB/总{total_vram}MB（{model_percent}%）")
+            if estimated_memory > 0 and total_vram > 0:
+                logger.info(f"预估图片显存：{estimated_memory:.2f}MB（{estimated_percent_calc:.1f}%）")
+                logger.info(f"预估总显存（模型+图片）：{total_estimated_percent:.1f}%（{pre_gen_used + estimated_memory:.2f}MB/总{total_vram}MB）")
+            else:
+                logger.warning(f"⚠️ 无法计算预估总显存（总显存未知或图片预估显存为0）")
             logger.info(f"====================================\n")
 
         # 克隆模型并绑定块交换回调
