@@ -18,6 +18,7 @@ import psutil
 import platform
 import subprocess
 from ctypes import wintypes
+from datetime import datetime
 
 # ========================== 内存分析器 ==========================
 
@@ -450,14 +451,16 @@ class MemoryCleaner:
     CATEGORY = "CommonExtension/debug"
 
     def clean(self, anything: Any, clean_intensity: int, unload: bool) -> Tuple[Any]:
-
-        print(f"🧹 执行{clean_intensity}级显存清理...")
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"[{current_time}] 🧹 执行{clean_intensity}级显存内存清理...")
         pre_ram, post_ram, pre_vram, post_vram = perform_full_cleanup(
             unload=unload,
             intensity=clean_intensity
         )
         _print_clean_report(pre_ram, post_ram, clean_intensity)
         clean_ram(True,True,True,1)
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"[{current_time}] 🧹 执行{clean_intensity}级显存内存清理结束")
         return (anything,)
     
 def _print_clean_report(pre: float, post: float, clean_intensity: int) -> None:
