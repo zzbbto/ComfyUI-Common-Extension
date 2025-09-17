@@ -57,4 +57,4 @@ class SamplerSchedulerPlugin:
 
 def setup_plugin(server):
     LoraPreviewPlugin.register_routes(server)
-    SamplerSchedulerPlugin.register_routes(server)
+    # SamplerSchedulerPlugin.register_routes(server)
