@@ -324,7 +324,6 @@ class ModelBlockSwap:
                         adjusted_threshold = max(10, min(adjusted_threshold - estimated_percent, 95))
                         logger.info(f"📊 阈值调整：原{vram_threshold_percent}% → 新{adjusted_threshold:.1f}%（预估图片显存{estimated_memory:.2f}MB）")
                 logger.info(f"📌 自动模式显存阈值：{adjusted_threshold:.1f}%")
-            # 非自动模式：不处理阈值（跳过调整逻辑）
 
             # 2. 模型结构解析（Flux优先）
             unet = None
@@ -365,9 +364,14 @@ class ModelBlockSwap:
             comfy.model_management.soft_empty_cache()
             gc.collect()
             pre_check_used, total_vram, pre_check_percent = calculate_vram_metrics()
-            logger.info(f"📋 自动模式预检：当前显存占用={pre_check_used}MB/总{total_vram}MB（{pre_check_percent}%），阈值={adjusted_threshold:.1f}%")
             
-            cycle_count = 0
+            # 修正此处的日志输出，增加条件判断
+            if is_auto_mode and adjusted_threshold is not None:
+                logger.info(f"📋 自动模式预检：当前显存占用={pre_check_used}MB/总{total_vram}MB（{pre_check_percent}%），阈值={adjusted_threshold:.1f}%")
+            else:
+                logger.info(f"📋 显存状态：当前显存占用={pre_check_used}MB/总{total_vram}MB（{pre_check_percent}%）")
+
+            cycle_count = 0  
             target_met = False
             # 预检逻辑：仅自动模式且显存已达标时，跳过交换
             if is_auto_mode and pre_check_percent != -1 and pre_check_percent <= adjusted_threshold:
