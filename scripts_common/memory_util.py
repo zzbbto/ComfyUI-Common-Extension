@@ -242,7 +242,7 @@ class IntegratedMemoryAnalyzer(MemoryAnalyzer):
             },
             "optional": {
                 "clean_before": ("BOOLEAN", {"default": True}),
-                "clean_intensity": ("INT", {"default": 3, "min": 1, "max": 5}),
+                "clean_intensity": ("INT", {"default": 3, "min": 1, "max": 3}),
                 "unload": ("BOOLEAN", {"default": True}),
                 "print_detail": ("BOOLEAN", {"default": False}),
                 "sort_by_size": ("BOOLEAN", {"default": True})
@@ -440,7 +440,7 @@ class MemoryCleaner:
         return {
             "required": {              
                 "anything": (any, {}),
-                "clean_intensity": ("INT", {"default": 3, "min": 1, "max": 5}),
+                "clean_intensity": ("INT", {"default": 3, "min": 1, "max": 3}),
                 "unload": ("BOOLEAN", {"default": True})
             }
         }

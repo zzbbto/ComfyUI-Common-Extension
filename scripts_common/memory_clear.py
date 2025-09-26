@@ -82,38 +82,38 @@ def clear_memory(intensity: int = 3) -> Tuple[float, float]:
         # except Exception as e:
         #     print(f"⚠️ NVIDIA驱动缓存清理失败: {str(e)}")
     
-    # 4. 专家级清理
-    if intensity >= 4:
-        try:
-            # 同步所有设备
-            for i in range(torch.cuda.device_count()):
-                torch.cuda.synchronize(i)
+    # # 4. 专家级清理
+    # if intensity >= 4:
+    #     try:
+    #         # 同步所有设备
+    #         for i in range(torch.cuda.device_count()):
+    #             torch.cuda.synchronize(i)
             
-            # 强制释放PyTorch保留的缓存
-            if hasattr(torch.cuda, 'memory_reserved'):
-                torch.cuda.memory_reserved(0)
-                torch.cuda.memory_reserved(0)  # 双重调用确保释放
+    #         # 强制释放PyTorch保留的缓存
+    #         if hasattr(torch.cuda, 'memory_reserved'):
+    #             torch.cuda.memory_reserved(0)
+    #             torch.cuda.memory_reserved(0)  # 双重调用确保释放
             
-            # 使用低级API释放内存
-            _release_cuda_caches()
+    #         # 使用低级API释放内存
+    #         _release_cuda_caches()
             
-            # 强制断开Python对象引用
-            _break_object_references()
-        except Exception as e:
-            print(f"⚠️ 专家级清理失败: {str(e)}")
+    #         # 强制断开Python对象引用
+    #         _break_object_references()
+    #     except Exception as e:
+    #         print(f"⚠️ 专家级清理失败: {str(e)}")
     
-    # 5. 终极清理（针对顽固内存）
-    if intensity >= 5:
-        try:
-            # 执行终极断开引用操作
-            print("🔨 执行终极断开引用操作...")
-            _break_all_cuda_references()
+    # # 5. 终极清理（针对顽固内存）
+    # if intensity >= 5:
+    #     try:
+    #         # 执行终极断开引用操作
+    #         print("🔨 执行终极断开引用操作...")
+    #         _break_all_cuda_references()
             
-            # 强制重置CUDA上下文
-            _reset_cuda_context_aggressive()
-            print("♻️ 已执行终极CUDA上下文重置")
-        except Exception as e:
-            print(f"⚠️ 终极清理失败: {str(e)}")
+    #         # 强制重置CUDA上下文
+    #         _reset_cuda_context_aggressive()
+    #         print("♻️ 已执行终极CUDA上下文重置")
+    #     except Exception as e:
+    #         print(f"⚠️ 终极清理失败: {str(e)}")
     
     # 记录清理后状态
     post_vram = get_system_vram_usage()
