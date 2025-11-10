@@ -1,7 +1,8 @@
 # ComfyUI-Common-Extension
 
 #### 介绍
-公共组件
+批量调用comfyui，runninghub软件的辅助插件
+b站：zzbbto
 
 #### 软件架构
 
