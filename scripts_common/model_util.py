@@ -361,6 +361,8 @@ class ModelBlockSwap:
 
             # ---------------------- 核心修改2：自动模式新增【交换前显存预检】 ----------------------
             # 先清理缓存并获取当前显存（排除历史残留）
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
             comfy.model_management.soft_empty_cache()
             gc.collect()
             pre_check_used, total_vram, pre_check_percent = calculate_vram_metrics()
