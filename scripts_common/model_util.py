@@ -38,10 +38,13 @@ def extract_flux_core(flux_model):
     for attr in core_candidates:
         if hasattr(flux_model, attr):
             core = getattr(flux_model, attr)
-            logger.info(f"✅ Flux找到核心属性：.{attr}（类型：{type(core).__name__}）")
-            core_attrs = [a for a in dir(core) if not a.startswith('_')]
-            logger.debug(f"Flux核心属性.{attr}的子属性：{core_attrs}")
-            return core
+            # 新增：校验核心是否包含可迁移结构（Module/Tensor）
+            if isinstance(core, (torch.nn.Module, list, tuple)):
+                if isinstance(core, torch.nn.Module) or any(isinstance(x, (torch.nn.Module, torch.Tensor)) for x in core):
+                    logger.info(f"✅ Flux找到核心属性：.{attr}（类型：{type(core).__name__}）")
+                    core_attrs = [a for a in dir(core) if not a.startswith('_')]
+                    logger.debug(f"Flux核心属性.{attr}的子属性：{core_attrs}")
+                    return core
     
     logger.warning(f"⚠️ Flux未找到明确核心属性，使用自身作为候选")
     flux_attrs = [a for a in dir(flux_model) if not a.startswith('_')]
@@ -106,6 +109,7 @@ def find_blocks_attribute(unet):
         if not obj or isinstance(obj, (int, float, str, bool)):
             return
         
+        # Flux特有块处理（新增类型过滤）
         for flux_attr in ['single_blocks', 'double_blocks']:
             if hasattr(obj, flux_attr):
                 flux_obj = getattr(obj, flux_attr)
@@ -113,32 +117,37 @@ def find_blocks_attribute(unet):
                 logger.debug(f"🔍 扫描Flux特有块：{flux_path}（类型：{type(flux_obj).__name__}）")
                 if hasattr(flux_obj, '__len__') and hasattr(flux_obj, '__iter__'):
                     for idx, item in enumerate(flux_obj):
-                        item_path = f"{flux_path}[{idx}]"
-                        block_info.append((item_path, item))
-                        logger.debug(f"✅ 找到Flux块：{item_path}（类型：{type(item).__name__}）")
+                        # 新增：仅保留Module/Tensor类型的块
+                        if isinstance(item, (torch.nn.Module, torch.Tensor)):
+                            item_path = f"{flux_path}[{idx}]"
+                            block_info.append((item_path, item))
+                            logger.debug(f"✅ 找到Flux块：{item_path}（类型：{type(item).__name__}）")
                 _recursive_find_blocks(flux_obj, flux_path)
         
+        # 传统块处理（新增类型过滤）
         for b_attr in BLOCK_ATTR_CANDIDATES:
             if hasattr(obj, b_attr) and b_attr not in ['single_blocks', 'double_blocks']:
                 b_obj = getattr(obj, b_attr)
                 b_path = f"{parent_path}.{b_attr}" if parent_path else b_attr
                 if hasattr(b_obj, '__len__') and hasattr(b_obj, '__iter__'):
                     for idx, item in enumerate(b_obj):
-                        item_path = f"{b_path}[{idx}]"
-                        block_info.append((item_path, item))
-                        logger.debug(f"✅ 找到传统块：{item_path}（类型：{type(item).__name__}）")
+                        # 新增：仅保留Module/Tensor类型的块
+                        if isinstance(item, (torch.nn.Module, torch.Tensor)):
+                            item_path = f"{b_path}[{idx}]"
+                            block_info.append((item_path, item))
+                            logger.debug(f"✅ 找到传统块：{item_path}（类型：{type(item).__name__}）")
                 _recursive_find_blocks(b_obj, b_path)
     
     _recursive_find_blocks(unet)
     if not block_info:
-        logger.warning("❌ 未找到任何有效块结构")
+        logger.warning("❌ 未找到任何有效块结构（仅Module/Tensor类型被保留）")
         return None, None
     
     block_info.sort(key=lambda x: x[0])
     merged_blocks = [item for (path, item) in block_info]
     full_paths = [path for (path, item) in block_info]
     
-    logger.info(f"📊 找到块总数：{len(merged_blocks)}，块路径示例：{full_paths[:3]}...")
+    logger.info(f"📊 找到有效块总数：{len(merged_blocks)}，块路径示例：{full_paths[:3]}...")
     return " | ".join(full_paths[:5] + ["..."] if len(full_paths) > 5 else full_paths), merged_blocks
 
 
@@ -248,7 +257,7 @@ class ModelBlockLogger:
                 logger.info(f"✅ 识别到UNet组件：{found_unet_attr}")
                 blocks_attr, blocks = find_blocks_attribute(found_unet)
                 if blocks_attr and blocks:
-                    logger.info(f"📊 块结构：路径={blocks_attr}，总数={len(blocks)}")
+                    logger.info(f"📊 块结构：路径={blocks_attr}，有效块总数={len(blocks)}")
                 else:
                     logger.warning("⚠️ UNet中未找到有效块结构")
             else:
@@ -267,7 +276,7 @@ class ModelBlockLogger:
         return (model, )
 
 
-# ---------------------- ModelBlockSwap 类（核心修改） ----------------------
+# ---------------------- ModelBlockSwap 类（核心修复） ----------------------
 class ModelBlockSwap:
     @classmethod
     def INPUT_TYPES(s):
@@ -279,7 +288,7 @@ class ModelBlockSwap:
                 "vram_threshold_percent": ("INT", {"default": 90, "min": 10, "max": 95, "step": 1, "tooltip": "自动模式阈值"}),
                 "offload_img_emb": ("BOOLEAN", {"default": False, "tooltip": "卸载图像嵌入层"}),
                 "offload_txt_emb": ("BOOLEAN", {"default": False, "tooltip": "卸载文本嵌入层"}),
-                "use_non_blocking": ("BOOLEAN", {"default": False, "tooltip": "非阻塞传输"}),
+                "use_non_blocking": ("BOOLEAN", {"default": False, "tooltip": "非阻塞传输（GPU间有效）"}),
             },
             "optional": {
                 "vr_am_single": ("INT", {"default": 100, "min": 0, "max": 1000, "step": 2, "tooltip": "单张额外显存"}),
@@ -287,7 +296,7 @@ class ModelBlockSwap:
             }
         }
     RETURN_TYPES = ("MODEL",)
-    CATEGORY = "CommonExtension/ModelBlockSwap"
+    CATEGORY = "CommonExtension/ModelBlockLogger"
     FUNCTION = "set_callback"
 
     def set_callback(
@@ -345,12 +354,12 @@ class ModelBlockSwap:
                     if not unet:
                         raise ValueError("未识别到UNet组件")
 
-                # 提取块结构
+                # 提取块结构（已过滤无效类型）
                 blocks_attr, blocks = find_blocks_attribute(unet)
                 if not blocks or len(blocks) == 0:
                     raise ValueError("UNet中无有效块（数量=0）")
                 total_blocks = len(blocks)
-                logger.info(f"📊 结构确认：UNet来源={unet_attr if 'unet_attr' in locals() else 'Flux核心'}，块总数={total_blocks}")
+                logger.info(f"📊 结构确认：UNet来源={unet_attr if 'unet_attr' in locals() else 'Flux核心'}，有效块总数={total_blocks}")
 
             except Exception as e:
                 logger.error(f"❌ 模型解析失败：{str(e)}")
@@ -365,7 +374,7 @@ class ModelBlockSwap:
             gc.collect()
             pre_check_used, total_vram, pre_check_percent = calculate_vram_metrics()
             
-            # 修正此处的日志输出，增加条件判断
+            # 修正日志输出，增加条件判断
             if is_auto_mode and adjusted_threshold is not None:
                 logger.info(f"📋 自动模式预检：当前显存占用={pre_check_used}MB/总{total_vram}MB（{pre_check_percent}%），阈值={adjusted_threshold:.1f}%")
             else:
@@ -373,28 +382,49 @@ class ModelBlockSwap:
 
             cycle_count = 0  
             target_met = False
+            final_swap_count = 0
             # 预检逻辑：仅自动模式且显存已达标时，跳过交换
             if is_auto_mode and pre_check_percent != -1 and pre_check_percent <= adjusted_threshold:
                 logger.info(f"🎉 预检通过：初始显存已低于阈值，无需执行块交换")
                 pre_gen_used = pre_check_used  # 复用预检的显存数据
-                final_swap_count = 0  # 无交换，块数为0
             else:
-                # 3. 块交换执行（仅预检不通过时进入）
+                # 3. 块交换执行（核心修复：仅处理有效块，兼容设备）
                 while True:
                     cycle_count += 1
                     swap_count = min(max(0, round(total_blocks * (current_swap_pct / 100))), total_blocks)
-                    logger.info(f"🔄 【{actual_model_type} - 第{cycle_count}次交换】百分比={current_swap_pct}% → 交换块数={swap_count}/{total_blocks}")
+                    logger.info(f"🔄 【{actual_model_type} - 第{cycle_count}次交换】百分比={current_swap_pct}% → 计划交换块数={swap_count}/{total_blocks}")
 
-                    # 块迁移
+                    # 块迁移（修复后逻辑）
                     torch.cuda.synchronize() if torch.cuda.is_available() else None
                     success_count = 0
                     for idx, block in tqdm(enumerate(blocks), total=total_blocks, desc=f"块交换（{current_swap_pct}%）"):
                         target_dev = main_device if idx >= swap_count else offload_device
                         try:
-                            block.to(target_dev, non_blocking=use_non_blocking)
+                            # 1. 再次校验块有效性（双重保险）
+                            if not isinstance(block, (torch.nn.Module, torch.Tensor)):
+                                logger.debug(f"⚠️ 块{idx}类型无效（{type(block).__name__}），跳过")
+                                continue
+                            
+                            # 2. 跳过已在目标设备的块（避免重复迁移）
+                            current_dev = block.device if hasattr(block, 'device') else None
+                            if current_dev == target_dev:
+                                success_count += 1
+                                logger.debug(f"✅ 块{idx}已在{target_dev}，跳过迁移")
+                                continue
+                            
+                            # 3. 非阻塞迁移兼容处理（CPU不支持，强制关闭）
+                            effective_non_blocking = use_non_blocking and target_dev.type == 'cuda'
+                            
+                            # 4. 执行迁移（区分Tensor和Module，避免方法差异）
+                            if isinstance(block, torch.Tensor):
+                                block.data = block.data.to(target_dev, non_blocking=effective_non_blocking)
+                            else:  # nn.Module
+                                block.to(target_dev, non_blocking=effective_non_blocking)
+                            
                             success_count += 1
+                            logger.debug(f"✅ 块{idx}（{type(block).__name__}）从{current_dev}迁移至{target_dev}")
                         except Exception as e:
-                            logger.warning(f"⚠️ 块{idx}迁移失败：{str(e)}，跳过")
+                            logger.warning(f"⚠️ 块{idx}迁移失败：{str(e)}（类型：{type(block).__name__}），跳过")
                     torch.cuda.synchronize() if torch.cuda.is_available() else None
 
                     # 清理缓存 + 记录生成前基础显存
@@ -406,20 +436,21 @@ class ModelBlockSwap:
                     # ---------------------- 核心修改3：仅自动模式判断阈值终止 ----------------------
                     if not is_auto_mode:
                         # 非自动模式：只执行1次交换，直接退出循环
+                        final_swap_count = swap_count
                         break
                     else:
                         # 自动模式：基于调整后的阈值判断是否终止
                         if pre_gen_percent != -1 and pre_gen_percent <= adjusted_threshold:
                             logger.info(f"🎉 显存达标（{pre_gen_percent}% ≤ {adjusted_threshold:.1f}%），停止交换")
                             target_met = True
+                            final_swap_count = swap_count
                             break
                         elif current_swap_pct >= 100:
                             logger.warning(f"⚠️ 交换百分比已拉满（100%），显存仍未达标")
+                            final_swap_count = swap_count
                             break
                         else:
                             current_swap_pct = min(current_swap_pct + AUTO_SWAP_STEP, 100)
-                # 计算最终交换块数（预检不通过时）
-                final_swap_count = min(max(0, round(total_blocks * (current_swap_pct / 100))), total_blocks)
 
             # 5. 嵌入层卸载
             if offload_txt_emb or offload_img_emb:
@@ -440,7 +471,9 @@ class ModelBlockSwap:
                             break
                     if emb_obj:
                         try:
-                            emb_obj.to(offload_device, non_blocking=use_non_blocking)
+                            # 嵌入层迁移同样增加设备兼容
+                            effective_non_blocking = use_non_blocking and offload_device.type == 'cuda'
+                            emb_obj.to(offload_device, non_blocking=effective_non_blocking)
                             logger.info(f"✅ 卸载{emb_type}嵌入层：{found_path}")
                         except Exception as e:
                             logger.warning(f"⚠️ {emb_type}嵌入层卸载失败：{str(e)}")
@@ -451,11 +484,9 @@ class ModelBlockSwap:
             logger.info(f"\n=== {actual_model_type} - 块交换最终结果 ===")
             if is_auto_mode and pre_check_percent != -1 and pre_check_percent <= adjusted_threshold:
                 logger.info(f"循环次数：0次（预检通过，未执行交换）")
-                # 预检通过：用“预检时的模型百分比 + 图片预估百分比”
                 model_percent = pre_check_percent
             else:
-                logger.info(f"循环次数：{cycle_count}次，最终交换百分比：{current_swap_pct}%，交换块数：{final_swap_count}/{total_blocks}")
-                # 预检不通过：用“交换后的模型百分比 + 图片预估百分比”
+                logger.info(f"循环次数：{cycle_count}次，最终交换百分比：{current_swap_pct}%，实际交换块数：{final_swap_count}/{total_blocks}")
                 model_percent = pre_gen_percent if 'pre_gen_percent' in locals() else pre_check_percent
 
             # 统一计算图片预估百分比（避免重复代码）
