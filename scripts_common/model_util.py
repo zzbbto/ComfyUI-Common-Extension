@@ -10,6 +10,9 @@ from memory_clear import (
     get_system_vram_usage,
     get_total_gpu_memory
 )
+from memory_util import (
+    clean_ram,
+)
 
 # ---------------------- 共享常量与工具函数 ----------------------
 logging.basicConfig(
@@ -309,7 +312,7 @@ class ModelBlockSwap:
             actual_model_type = model_type if model_type != "Auto" else type(base_model).__name__
             main_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
             offload_device = model.offload_device or torch.device('cpu')
-
+            clean_ram(True,True,False,1)
             # ---------------------- 核心修改1：仅自动模式处理阈值 ----------------------
             adjusted_threshold = None
             if is_auto_mode:
