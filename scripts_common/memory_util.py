@@ -270,7 +270,7 @@ class IntegratedMemoryAnalyzer(MemoryAnalyzer):
                 intensity=clean_intensity
             )
             _print_clean_report(pre_ram, post_ram, clean_intensity)
-            clean_ram(True,True,True,1)
+            clean_ram(True,True,False,1)
         else:
             print("⏩ 跳过清理操作")
             post_vram = get_system_vram_usage()
@@ -458,7 +458,7 @@ class MemoryCleaner:
             intensity=clean_intensity
         )
         _print_clean_report(pre_ram, post_ram, clean_intensity)
-        clean_ram(True,True,True,1)
+        clean_ram(True,True,False,1)
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         print(f"[{current_time}] 🧹 执行{clean_intensity}级显存内存清理结束")
         return (anything,)
