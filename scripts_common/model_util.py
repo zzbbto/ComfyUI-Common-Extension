@@ -110,10 +110,9 @@ def _check_component(candidate):
     return False
 
 
-# 核心修复2：新增base_model参数，解决变量未定义问题
-def find_blocks_attribute(unet, base_model):
-    # WAN21模型直接返回blocks（和正常代码逻辑对齐）
-    if isinstance(base_model, WAN21) and hasattr(unet, 'blocks') and isinstance(unet.blocks, (list, torch.nn.ModuleList)):
+def find_blocks_attribute(unet):
+    # 核心修复2：WAN21模型直接返回blocks（和正常代码逻辑对齐）
+    if hasattr(unet, 'blocks') and isinstance(unet.blocks, (list, torch.nn.ModuleList)) and isinstance(unet, base_model.diffusion_model.__class__) and isinstance(base_model, WAN21):
         logger.info(f"✅ WAN21模型：直接提取diffusion_model.blocks（数量：{len(unet.blocks)}）")
         block_info = [(f"blocks[{idx}]", block) for idx, block in enumerate(unet.blocks)]
         merged_blocks = [item for (path, item) in block_info]
@@ -266,8 +265,7 @@ class ModelBlockLogger:
             found_unet, found_unet_attr = find_unet_component(base_model)
             if found_unet:
                 logger.info(f"✅ 识别到UNet组件：{found_unet_attr}")
-                # 修复：调用find_blocks_attribute时传入base_model参数
-                blocks_attr, blocks = find_blocks_attribute(found_unet, base_model)
+                blocks_attr, blocks = find_blocks_attribute(found_unet)
                 if blocks_attr and blocks:
                     logger.info(f"📊 块结构：路径={blocks_attr}，总数={len(blocks)}")
                 else:
@@ -366,8 +364,8 @@ class ModelBlockSwap:
                     if not unet:
                         raise ValueError("未识别到UNet组件")
 
-                # 修复：调用find_blocks_attribute时传入base_model参数
-                blocks_attr, blocks = find_blocks_attribute(unet, base_model)
+                # 提取块结构
+                blocks_attr, blocks = find_blocks_attribute(unet)
                 if not blocks or len(blocks) == 0:
                     raise ValueError("UNet中无有效块（数量=0）")
                 total_blocks = len(blocks)
