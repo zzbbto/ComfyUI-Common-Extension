@@ -282,7 +282,7 @@ class ModelBlockSwap:
                 "vram_threshold_percent": ("INT", {"default": 90, "min": 10, "max": 95, "step": 1, "tooltip": "自动模式阈值"}),
                 "offload_img_emb": ("BOOLEAN", {"default": False, "tooltip": "卸载图像嵌入层"}),
                 "offload_txt_emb": ("BOOLEAN", {"default": False, "tooltip": "卸载文本嵌入层"}),
-                "use_non_blocking": ("BOOLEAN", {"default": True, "tooltip": "非阻塞传输"}),
+                "use_non_blocking": ("BOOLEAN", {"default": False, "tooltip": "非阻塞传输"}),
             },
             "optional": {
                 "vr_am_single": ("INT", {"default": 100, "min": 0, "max": 1000, "step": 2, "tooltip": "单张额外显存"}),
