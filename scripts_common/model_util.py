@@ -60,6 +60,22 @@ def safe_move_module(module: torch.nn.Module, target_device: torch.device, non_b
 
     # 递归迁移所有参数和缓冲区
     try:
+        # module.to(target_device, non_blocking=non_blocking)
+        # with torch.no_grad():
+        #     # 迁移当前模块的参数
+        #     for param in module.parameters(recurse=False):
+        #         if param is not None and param.device != target_device:
+        #             param.data = param.data.to(target_device, non_blocking=non_blocking)
+        #             if param.grad is not None:
+        #                 param.grad = param.grad.to(target_device, non_blocking=non_blocking)
+        #     # 迁移当前模块的缓冲区
+        #     for buf in module.buffers(recurse=False):
+        #         if buf is not None and buf.device != target_device:
+        #             buf.data = buf.data.to(target_device, non_blocking=non_blocking)
+        #     # 递归处理所有子模块
+        #     for child in module.children():
+        #         safe_move_module(child, target_device, non_blocking)
+
         with torch.no_grad():
             # 迁移可训练参数
             for param in module.parameters(recurse=False):
