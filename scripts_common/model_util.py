@@ -42,35 +42,32 @@ def is_cuda_device(device):
 # 新增：安全迁移模块到目标设备（核心修复CUDA报错）
 def safe_move_module(module, target_device, non_blocking=False):
     """
-    安全迁移模块的参数/缓冲区到目标设备，避免直接module.to()导致的CUDA invalid argument错误
-    :param module: nn.Module 待迁移模块
-    :param target_device: torch.device 目标设备
-    :param non_blocking: bool 非阻塞传输（仅CUDA→CUDA生效）
-    :return: bool 是否迁移成功
+    修复：递归迁移模块所有参数/缓冲区（包括子模块），确保真正移到目标设备
     """
-    # 1. 校验模块类型
     if not isinstance(module, torch.nn.Module):
         logger.warning(f"跳过非nn.Module迁移：{type(module).__name__}")
         return False
     
-    # 2. 修正non_blocking：仅CUDA→CUDA时启用
+    # 修正non_blocking：仅CUDA→CUDA时启用
     current_device = next(module.parameters()).device if len(list(module.parameters())) > 0 else torch.device('cpu')
     if not (is_cuda_device(current_device) and is_cuda_device(target_device)):
         non_blocking = False
     
-    # 3. 逐参数迁移（避免整模块to()的兼容性问题）
+    # 修复：递归迁移所有参数（包括子模块）
     try:
         with torch.no_grad():
-            # 迁移可训练参数
-            for param in module.parameters(recurse=False):
-                if param is not None and param.device != target_device:
-                    param.data = param.data.to(target_device, non_blocking=non_blocking)
-                    if param.grad is not None:
-                        param.grad = param.grad.to(target_device, non_blocking=non_blocking)
-            # 迁移缓冲区（如running_mean/running_var）
-            for buf in module.buffers(recurse=False):
-                if buf is not None and buf.device != target_device:
-                    buf.data = buf.data.to(target_device, non_blocking=non_blocking)
+            # 递归遍历所有子模块+当前模块
+            for sub_module in module.modules():
+                # 迁移可训练参数
+                for param in sub_module.parameters(recurse=False):
+                    if param is not None and param.device != target_device:
+                        param.data = param.data.to(target_device, non_blocking=non_blocking)
+                        if param.grad is not None:
+                            param.grad = param.grad.to(target_device, non_blocking=non_blocking)
+                # 迁移缓冲区（如BN层的running_mean）
+                for buf in sub_module.buffers(recurse=False):
+                    if buf is not None and buf.device != target_device:
+                        buf.data = buf.data.to(target_device, non_blocking=non_blocking)
         return True
     except Exception as e:
         logger.error(f"模块迁移失败：{str(e)}")
