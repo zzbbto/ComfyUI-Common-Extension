@@ -31,6 +31,62 @@ DEFAULT_TXT_EMB_ATTR = "text_embedding"
 DEFAULT_IMG_EMB_ATTR = "img_emb"
 MIN_VR_AM_SINGLE = 40
 
+# 新增：检查设备是否为CUDA（统一判断逻辑）
+def is_cuda_device(device):
+    if isinstance(device, str):
+        return device.startswith('cuda')
+    elif isinstance(device, torch.device):
+        return device.type == 'cuda'
+    return False
+
+# 新增：安全迁移模块到目标设备（核心修复CUDA报错）
+def safe_move_module(module, target_device, non_blocking=False):
+    """
+    安全迁移模块的参数/缓冲区到目标设备，避免直接module.to()导致的CUDA invalid argument错误
+    :param module: nn.Module 待迁移模块
+    :param target_device: torch.device 目标设备
+    :param non_blocking: bool 非阻塞传输（仅CUDA→CUDA生效）
+    :return: bool 是否迁移成功
+    """
+    # 1. 校验模块类型
+    if not isinstance(module, torch.nn.Module):
+        logger.warning(f"跳过非nn.Module迁移：{type(module).__name__}")
+        return False
+    
+    # 2. 修正non_blocking：仅CUDA→CUDA时启用
+    current_device = next(module.parameters()).device if len(list(module.parameters())) > 0 else torch.device('cpu')
+    if not (is_cuda_device(current_device) and is_cuda_device(target_device)):
+        non_blocking = False
+    
+    # 3. 逐参数迁移（避免整模块to()的兼容性问题）
+    try:
+        with torch.no_grad():
+            # 迁移可训练参数
+            for param in module.parameters(recurse=False):
+                if param is not None and param.device != target_device:
+                    param.data = param.data.to(target_device, non_blocking=non_blocking)
+                    if param.grad is not None:
+                        param.grad = param.grad.to(target_device, non_blocking=non_blocking)
+            # 迁移缓冲区（如running_mean/running_var）
+            for buf in module.buffers(recurse=False):
+                if buf is not None and buf.device != target_device:
+                    buf.data = buf.data.to(target_device, non_blocking=non_blocking)
+        return True
+    except Exception as e:
+        logger.error(f"模块迁移失败：{str(e)}")
+        return False
+
+# 新增：统一设备为torch.device对象（避免类型混用）
+def normalize_device(device):
+    if device is None:
+        return torch.device('cpu')
+    if isinstance(device, int):
+        return torch.device(f'cuda:{device}') if torch.cuda.is_available() else torch.device('cpu')
+    if isinstance(device, str):
+        return torch.device(device)
+    if isinstance(device, torch.device):
+        return device
+    return torch.device('cpu')
 
 def extract_flux_core(flux_model):
     if not hasattr(flux_model, '__class__') or flux_model.__class__.__name__ != "Flux":
@@ -50,7 +106,6 @@ def extract_flux_core(flux_model):
     flux_attrs = [a for a in dir(flux_model) if not a.startswith('_')]
     logger.debug(f"Flux自身属性：{flux_attrs}")
     return flux_model
-
 
 def find_unet_component(base_model):
     if isinstance(base_model, Flux) and hasattr(base_model, 'diffusion_model'):
@@ -74,7 +129,6 @@ def find_unet_component(base_model):
                 return candidate, attr
     
     return None, None
-
 
 def _check_component(candidate):
     if not candidate:
@@ -100,7 +154,6 @@ def _check_component(candidate):
                 return True
     
     return False
-
 
 def find_blocks_attribute(unet):
     block_info = []
@@ -144,7 +197,6 @@ def find_blocks_attribute(unet):
     logger.info(f"📊 找到块总数：{len(merged_blocks)}，块路径示例：{full_paths[:3]}...")
     return " | ".join(full_paths[:5] + ["..."] if len(full_paths) > 5 else full_paths), merged_blocks
 
-
 def calculate_vram_metrics():
     try:
         used = get_system_vram_usage()
@@ -169,7 +221,6 @@ def calculate_vram_metrics():
     
     return used, total, round(max(0.0, min(percent, 100.0)), 1)
 
-
 def get_effective_swap_percent(input_percent):
     if input_percent == -1:
         logger.info(f"🔄 启用自动模式，初始交换百分比={AUTO_INIT_PERCENT}%（显存超标时生效）")
@@ -179,7 +230,6 @@ def get_effective_swap_percent(input_percent):
         logger.warning(f"📌 交换百分比{input_percent}%超出范围，调整为{clamped_percent}%（手动模式）")
     logger.info(f"🔧 启用手动模式，固定交换百分比={clamped_percent}%")
     return clamped_percent, False
-
 
 def calculate_suggested_vr_am_single(pre_gen_used, gen_peak_used, batch_size):
     if not (torch.cuda.is_available() and pre_gen_used > 0 and gen_peak_used > 0 and batch_size > 0):
@@ -197,13 +247,11 @@ def calculate_suggested_vr_am_single(pre_gen_used, gen_peak_used, batch_size):
     suggested = max(MIN_VR_AM_SINGLE, min(base_vr_am, 1000))
     return suggested
 
-
 def estimate_memory_usage(vr_am_single, batch_size):
     if vr_am_single <= 0 or batch_size <= 0:
         return 0
     estimated_memory = vr_am_single * batch_size
     return estimated_memory
-
 
 # ---------------------- ModelBlockLogger 类 ----------------------
 class ModelBlockLogger:
@@ -269,7 +317,6 @@ class ModelBlockLogger:
         model.add_callback(CallbacksMP.ON_LOAD, log_blocks)
         return (model, )
 
-
 # ---------------------- ModelBlockSwap 类（核心修改） ----------------------
 class ModelBlockSwap:
     @classmethod
@@ -310,9 +357,14 @@ class ModelBlockSwap:
             nonlocal pre_gen_used, gen_peak_used  # 声明为非局部变量
             base_model = model.model
             actual_model_type = model_type if model_type != "Auto" else type(base_model).__name__
-            main_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-            offload_device = model.offload_device or torch.device('cpu')
-            clean_ram(True,True,False,1)
+            
+            # 修复：统一设备为torch.device对象
+            main_device = normalize_device('cuda' if torch.cuda.is_available() else 'cpu')
+            offload_device = normalize_device(model.offload_device or 'cpu')
+            
+            # 清理RAM（避免内存泄漏）
+            clean_ram(True, True, False, 1)
+            
             # ---------------------- 核心修改1：仅自动模式处理阈值 ----------------------
             adjusted_threshold = None
             if is_auto_mode:
@@ -331,6 +383,8 @@ class ModelBlockSwap:
             # 2. 模型结构解析（Flux优先）
             unet = None
             blocks = None
+            total_blocks = 0
+            final_swap_count = 0  # 初始化：修复未定义问题
             try:
                 if model_type == "Flux":
                     logger.info(f"\n=== 块交换初始化（Flux手动模式）===")
@@ -366,6 +420,7 @@ class ModelBlockSwap:
             # 先清理缓存并获取当前显存（排除历史残留）
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
+                torch.cuda.synchronize()  # 新增：确保缓存清理完成
             comfy.model_management.soft_empty_cache()
             gc.collect()
             pre_check_used, total_vram, pre_check_percent = calculate_vram_metrics()
@@ -390,17 +445,22 @@ class ModelBlockSwap:
                     swap_count = min(max(0, round(total_blocks * (current_swap_pct / 100))), total_blocks)
                     logger.info(f"🔄 【{actual_model_type} - 第{cycle_count}次交换】百分比={current_swap_pct}% → 交换块数={swap_count}/{total_blocks}")
 
-                    # 块迁移
-                    torch.cuda.synchronize() if torch.cuda.is_available() else None
+                    # 块迁移（核心修复：替换block.to()为safe_move_module）
+                    if torch.cuda.is_available():
+                        torch.cuda.synchronize()  # 新增：避免异步操作冲突
                     success_count = 0
                     for idx, block in tqdm(enumerate(blocks), total=total_blocks, desc=f"块交换（{current_swap_pct}%）"):
                         target_dev = main_device if idx >= swap_count else offload_device
                         try:
-                            block.to(target_dev, non_blocking=use_non_blocking)
-                            success_count += 1
+                            # 修复：使用安全迁移函数替代直接to()
+                            if safe_move_module(block, target_dev, use_non_blocking):
+                                success_count += 1
+                            else:
+                                logger.warning(f"⚠️ 块{idx}迁移失败（安全迁移函数返回False），跳过")
                         except Exception as e:
                             logger.warning(f"⚠️ 块{idx}迁移失败：{str(e)}，跳过")
-                    torch.cuda.synchronize() if torch.cuda.is_available() else None
+                    if torch.cuda.is_available():
+                        torch.cuda.synchronize()  # 新增：确保所有迁移完成
 
                     # 清理缓存 + 记录生成前基础显存
                     comfy.model_management.soft_empty_cache()
@@ -411,22 +471,23 @@ class ModelBlockSwap:
                     # ---------------------- 核心修改3：仅自动模式判断阈值终止 ----------------------
                     if not is_auto_mode:
                         # 非自动模式：只执行1次交换，直接退出循环
+                        final_swap_count = swap_count
                         break
                     else:
                         # 自动模式：基于调整后的阈值判断是否终止
                         if pre_gen_percent != -1 and pre_gen_percent <= adjusted_threshold:
                             logger.info(f"🎉 显存达标（{pre_gen_percent}% ≤ {adjusted_threshold:.1f}%），停止交换")
                             target_met = True
+                            final_swap_count = swap_count
                             break
                         elif current_swap_pct >= 100:
                             logger.warning(f"⚠️ 交换百分比已拉满（100%），显存仍未达标")
+                            final_swap_count = swap_count
                             break
                         else:
                             current_swap_pct = min(current_swap_pct + AUTO_SWAP_STEP, 100)
-                # 计算最终交换块数（预检不通过时）
-                final_swap_count = min(max(0, round(total_blocks * (current_swap_pct / 100))), total_blocks)
 
-            # 5. 嵌入层卸载
+            # 5. 嵌入层卸载（修复：使用安全迁移函数）
             if offload_txt_emb or offload_img_emb:
                 logger.info(f"\n=== {actual_model_type} - 嵌入层卸载 ===")
                 embed_parents = [unet, base_model]
@@ -445,8 +506,11 @@ class ModelBlockSwap:
                             break
                     if emb_obj:
                         try:
-                            emb_obj.to(offload_device, non_blocking=use_non_blocking)
-                            logger.info(f"✅ 卸载{emb_type}嵌入层：{found_path}")
+                            # 修复：使用安全迁移函数卸载嵌入层
+                            if safe_move_module(emb_obj, offload_device, use_non_blocking):
+                                logger.info(f"✅ 卸载{emb_type}嵌入层：{found_path}")
+                            else:
+                                logger.warning(f"⚠️ {emb_type}嵌入层卸载失败（安全迁移函数返回False）")
                         except Exception as e:
                             logger.warning(f"⚠️ {emb_type}嵌入层卸载失败：{str(e)}")
                     else:
@@ -481,7 +545,6 @@ class ModelBlockSwap:
         model = model.clone()
         model.add_callback(CallbacksMP.ON_LOAD, swap_blocks)
         return (model, )
-
 
 # ---------------------- 节点映射 ----------------------
 NODE_CLASS_MAPPINGS = {
