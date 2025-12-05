@@ -53,6 +53,14 @@ def extract_flux_core(flux_model):
 
 
 def find_unet_component(base_model):
+    # 核心修复1：优先精准匹配WAN21（和正常代码逻辑对齐）
+    if isinstance(base_model, WAN21):
+        logger.info("📌 检测到WAN21模型，优先使用diffusion_model.blocks（和原生逻辑对齐）")
+        if hasattr(base_model, 'diffusion_model'):
+            unet = base_model.diffusion_model
+            if hasattr(unet, 'blocks'):
+                return unet, "diffusion_model (WAN21)"
+    
     if isinstance(base_model, Flux) and hasattr(base_model, 'diffusion_model'):
         logger.info("📌 检测到Flux模型，优先处理diffusion_model（类型为Flux）")
         flux_model = getattr(base_model, 'diffusion_model')
@@ -103,6 +111,14 @@ def _check_component(candidate):
 
 
 def find_blocks_attribute(unet):
+    # 核心修复2：WAN21模型直接返回blocks（和正常代码逻辑对齐）
+    if hasattr(unet, 'blocks') and isinstance(unet.blocks, (list, torch.nn.ModuleList)) and isinstance(unet, base_model.diffusion_model.__class__) and isinstance(base_model, WAN21):
+        logger.info(f"✅ WAN21模型：直接提取diffusion_model.blocks（数量：{len(unet.blocks)}）")
+        block_info = [(f"blocks[{idx}]", block) for idx, block in enumerate(unet.blocks)]
+        merged_blocks = [item for (path, item) in block_info]
+        full_paths = [path for (path, item) in block_info]
+        return " | ".join(full_paths[:5] + ["..."] if len(full_paths) > 5 else full_paths), merged_blocks
+    
     block_info = []
     
     def _recursive_find_blocks(obj, parent_path=""):
@@ -282,7 +298,7 @@ class ModelBlockSwap:
                 "vram_threshold_percent": ("INT", {"default": 90, "min": 10, "max": 95, "step": 1, "tooltip": "自动模式阈值"}),
                 "offload_img_emb": ("BOOLEAN", {"default": False, "tooltip": "卸载图像嵌入层"}),
                 "offload_txt_emb": ("BOOLEAN", {"default": False, "tooltip": "卸载文本嵌入层"}),
-                "use_non_blocking": ("BOOLEAN", {"default": True, "tooltip": "非阻塞传输"}),
+                "use_non_blocking": ("BOOLEAN", {"default": False, "tooltip": "非阻塞传输"}),
             },
             "optional": {
                 "vr_am_single": ("INT", {"default": 100, "min": 0, "max": 1000, "step": 2, "tooltip": "单张额外显存"}),
@@ -328,7 +344,7 @@ class ModelBlockSwap:
                         logger.info(f"📊 阈值调整：原{vram_threshold_percent}% → 新{adjusted_threshold:.1f}%（预估图片显存{estimated_memory:.2f}MB）")
                 logger.info(f"📌 自动模式显存阈值：{adjusted_threshold:.1f}%")
 
-            # 2. 模型结构解析（Flux优先）
+            # 2. 模型结构解析（Flux优先，WAN21已在find_unet_component中精准匹配）
             unet = None
             blocks = None
             try:
@@ -396,7 +412,9 @@ class ModelBlockSwap:
                     for idx, block in tqdm(enumerate(blocks), total=total_blocks, desc=f"块交换（{current_swap_pct}%）"):
                         target_dev = main_device if idx >= swap_count else offload_device
                         try:
-                            block.to(target_dev, non_blocking=use_non_blocking)
+                            # 核心修复3：WAN21模型强制non_blocking=False（CPU/CUDA传输不支持）
+                            nb = use_non_blocking if (main_device.type == 'cuda' and offload_device.type == 'cuda') else False
+                            block.to(target_dev, non_blocking=nb)
                             success_count += 1
                         except Exception as e:
                             logger.warning(f"⚠️ 块{idx}迁移失败：{str(e)}，跳过")
@@ -445,7 +463,9 @@ class ModelBlockSwap:
                             break
                     if emb_obj:
                         try:
-                            emb_obj.to(offload_device, non_blocking=use_non_blocking)
+                            # 核心修复4：嵌入层迁移同样强制校验non_blocking
+                            nb = use_non_blocking if (main_device.type == 'cuda' and offload_device.type == 'cuda') else False
+                            emb_obj.to(offload_device, non_blocking=nb)
                             logger.info(f"✅ 卸载{emb_type}嵌入层：{found_path}")
                         except Exception as e:
                             logger.warning(f"⚠️ {emb_type}嵌入层卸载失败：{str(e)}")
