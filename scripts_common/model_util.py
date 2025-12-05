@@ -461,6 +461,7 @@ class ModelBlockSwap:
                             logger.warning(f"⚠️ 块{idx}迁移失败：{str(e)}，跳过")
                     if torch.cuda.is_available():
                         torch.cuda.synchronize()  # 新增：确保所有迁移完成
+                        torch.cuda.empty_cache()
 
                     # 清理缓存 + 记录生成前基础显存
                     comfy.model_management.soft_empty_cache()
