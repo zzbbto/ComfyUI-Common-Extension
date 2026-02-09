@@ -86,4 +86,3 @@ __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]
 
 # 启动日志
 logger.info(f"[CommonExtension v{__version__}] 插件主入口加载完成")
-print(f"[CommonExtension v{__version__}] 插件初始化完成")

@@ -150,6 +150,3 @@ class RemoteWorkflowPlugin:
                 "filename": request.query.get("filename"),
                 "data": None,
             }, status=500, dumps=lambda x: web.json_dumps(x, ensure_ascii=False, indent=2))
-
-# 启动日志（首次加载时输出）
-logger.info(f"[RemoteWorkflowPlugin v{__version__}] 模块加载完成，等待路由注册")
