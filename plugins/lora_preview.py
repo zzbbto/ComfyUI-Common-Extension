@@ -6,35 +6,54 @@ import folder_paths
 # ===================== 配置 & 日志 =====================
 logger = logging.getLogger(__name__)
 
-# 安全配置
-MAX_STATIC_FILE_SIZE = 50 * 1024 * 1024  # 静态文件最大50MB
-CACHE_CONTROL = "max-age=3600"  # 缓存1小时
-
 class LoraPreviewPlugin:
     @classmethod
     def register_routes(cls, server):
-        """注册 Lora 预览静态文件路由"""
-        # 1. 检查路由表是否冻结（热重载场景）
+        """注册 /lora_previews GET 接口（仅获取Lora预览图片）"""
+        # 1. 检查路由表是否冻结
         if server.app.router.frozen:
             logger.info(f"[LoraPreviewPlugin] 路由表已冻结（热重载），跳过注册")
             return
 
-        # 2. 验证 Lora 目录
-        lora_dir = os.path.join(folder_paths.models_dir, "loras")
-        if not os.path.exists(lora_dir):
-            logger.error(f"[LoraPreviewPlugin] Lora 目录不存在：{lora_dir}")
-            return
-
         try:
-            # 3. 注册静态路由（增强安全配置）
-            server.app.router.add_static(
-                "/lora_previews",
-                lora_dir,
-                show_index=False,        # 禁止目录索引
-                max_size=MAX_STATIC_FILE_SIZE,  # 文件大小限制
-                cache_control=CACHE_CONTROL,    # 缓存控制
-                follow_symlinks=False    # 禁止软链接（安全）
-            )
-            logger.info(f"[LoraPreviewPlugin] 静态路由注册成功：/lora_previews -> {lora_dir}")
+            # 2. 仅注册 /lora_previews 一个 GET 接口
+            server.app.router.add_get("/lora_previews", cls.get_lora_preview)
+            logger.info(f"[LoraPreviewPlugin] API 路由注册成功：/lora_previews")
         except Exception as e:
             logger.error(f"[LoraPreviewPlugin] 路由注册失败：{str(e)}", exc_info=True)
+
+    @classmethod
+    async def get_lora_previews(cls, request):
+        """极简获取Lora预览图片（仅核心逻辑）"""
+        try:
+            # 1. 获取图片文件名参数
+            filename = request.query.get("filename")
+            if not filename:
+                return web.json_response(
+                    {"code": 400, "msg": "参数缺失：filename", "data": None},
+                    status=400,
+                    dumps=lambda x: web.json_dumps(x, ensure_ascii=False, indent=2)
+                )
+
+            # 2. 拼接Lora预览图片路径（核心：仅获取图片文件）
+            lora_dir = os.path.join(folder_paths.models_dir, "loras")
+            img_path = os.path.join(lora_dir, filename)
+
+            # 3. 仅检查图片是否存在
+            if not os.path.exists(img_path):
+                return web.json_response(
+                    {"code": 404, "msg": "预览图片不存在", "data": None},
+                    status=404,
+                    dumps=lambda x: web.json_dumps(x, ensure_ascii=False, indent=2)
+                )
+
+            # 4. 直接返回图片文件流（无任何多余逻辑）
+            return web.FileResponse(path=img_path)
+        
+        except Exception as e:
+            logger.error(f"[LoraPreviewPlugin] 获取预览图片失败：{str(e)}", exc_info=True)
+            return web.json_response(
+                {"code": 500, "msg": "获取图片失败", "data": None},
+                status=500,
+                dumps=lambda x: web.json_dumps(x, ensure_ascii=False, indent=2)
+            )

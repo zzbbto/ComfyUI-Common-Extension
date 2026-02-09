@@ -32,7 +32,6 @@ if os.path.exists(scripts_dir):
             # 合并节点映射（容错处理）
             NODE_CLASS_MAPPINGS.update(getattr(mod, "NODE_CLASS_MAPPINGS", {}))
             NODE_DISPLAY_NAME_MAPPINGS.update(getattr(mod, "NODE_DISPLAY_NAME_MAPPINGS", {}))
-            logger.info(f"[CommonExtension v{__version__}] 成功导入节点模块：{module_path}")
         except Exception as e:
             logger.error(f"[CommonExtension v{__version__}] 导入模块 {module_path} 失败：{str(e)}", exc_info=True)
 else:
