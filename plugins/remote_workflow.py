@@ -2,8 +2,7 @@ import json
 import logging
 import os
 import stat
-import ssl
-from urllib.parse import urlparse, urljoin
+from urllib.parse import urljoin
 from aiohttp import web, ClientSession, ClientError
 import folder_paths
 
@@ -35,7 +34,7 @@ def _safe_join(base_dir, filename):
         logger.error(f"[RemoteWorkflowPlugin] 路径校验失败：{filename} - {str(e)}")
         return None
 
-# ===================== 路由：列出所有工作流（修复json_dumps错误） =====================
+# ===================== 路由：列出所有工作流（已修复json_dumps） =====================
 @PromptServer.instance.routes.get("/api/remote_wf/list")
 async def list_all_user_workflows(request):
     try:
@@ -49,18 +48,15 @@ async def list_all_user_workflows(request):
                     file_stat = os.stat(file_path)
                     # 相对路径（如 test/api/test.json）
                     rel_filename = os.path.relpath(file_path, USER_WORKFLOW_DIR)
-                    # 统一路径分隔符为 /（兼容Windows）
-                    rel_filename = rel_filename.replace("\\", "/")
-                    
                     # 第一步：获取完整父目录（如 test/api/test.json → test/api）
                     full_parent_dir = os.path.dirname(rel_filename)
                     # 第二步：仅提取第一级目录
                     if full_parent_dir == "":
                         # 根目录文件，父目录为空
-                        parent_dir = ""
+                        parent_dir = "根目录"
                     else:
                         # 分割路径，取第一级（如 test/api → test，api → api）
-                        parent_dir = full_parent_dir.split("/")[0]
+                        parent_dir = full_parent_dir.split("\\")[0]
                     
                     workflows.append({
                         "filename": rel_filename,  # 完整相对路径（如 test/api/test.json）
@@ -81,7 +77,7 @@ async def list_all_user_workflows(request):
             "count": len(workflows),
             "data": workflows,
             "base_dir": USER_WORKFLOW_DIR,
-        }, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))  # 修复：web.json_dumps → json.dumps
+        }, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))
 
     except Exception as e:
         logger.error(f"[RemoteWorkflowPlugin] 列出用户工作流失败：{str(e)}", exc_info=True)
@@ -91,9 +87,9 @@ async def list_all_user_workflows(request):
             "count": 0,
             "data": None,
             "base_dir": USER_WORKFLOW_DIR,
-        }, status=500, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))  # 修复：web.json_dumps → json.dumps
+        }, status=500, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))
 
-# ===================== 路由：获取单个工作流（修复json_dumps错误） =====================
+# ===================== 路由：获取单个工作流（已修复json_dumps） =====================
 @PromptServer.instance.routes.get("/api/remote_wf/get")
 async def get_single_user_workflow(request):
     try:
@@ -103,7 +99,7 @@ async def get_single_user_workflow(request):
                 "code": 400,
                 "msg": "参数缺失：filename",
                 "data": None,
-            }, status=400, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))  # 修复
+            }, status=400, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))
 
         file_path = _safe_join(USER_WORKFLOW_DIR, filename)
         if not file_path:
@@ -112,7 +108,7 @@ async def get_single_user_workflow(request):
                 "msg": "非法文件名：禁止访问基础目录外的文件",
                 "filename": filename,
                 "data": None,
-            }, status=403, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))  # 修复
+            }, status=403, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))
 
         if not os.path.exists(file_path):
             return web.json_response({
@@ -120,7 +116,7 @@ async def get_single_user_workflow(request):
                 "msg": "工作流文件不存在",
                 "filename": filename,
                 "data": None,
-            }, status=404, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))  # 修复
+            }, status=404, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))
 
         with open(file_path, "r", encoding="utf-8") as f:
             workflow_json = json.load(f)
@@ -130,7 +126,7 @@ async def get_single_user_workflow(request):
             "msg": "success",
             "filename": filename,
             "data": workflow_json,
-        }, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))  # 修复
+        }, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))
 
     except json.JSONDecodeError as e:
         logger.error(f"[RemoteWorkflowPlugin] 工作流文件JSON解析失败：{filename} - {str(e)}", exc_info=True)
@@ -139,7 +135,7 @@ async def get_single_user_workflow(request):
             "msg": f"工作流文件JSON解析失败：{str(e)}",
             "filename": filename,
             "data": None,
-        }, status=500, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))  # 修复
+        }, status=500, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))
 
     except PermissionError:
         logger.error(f"[RemoteWorkflowPlugin] 无权限读取文件：{filename}", exc_info=True)
@@ -148,7 +144,7 @@ async def get_single_user_workflow(request):
             "msg": "无权限读取工作流文件",
             "filename": filename,
             "data": None,
-        }, status=500, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))  # 修复
+        }, status=500, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))
 
     except Exception as e:
         logger.error(f"[RemoteWorkflowPlugin] 获取单个工作流失败：{str(e)}", exc_info=True)
@@ -157,9 +153,9 @@ async def get_single_user_workflow(request):
             "msg": f"服务器内部错误：{str(e)}",
             "filename": request.query.get("filename"),
             "data": None,
-        }, status=500, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))  # 修复
+        }, status=500, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))
 
-# ===================== 核心路由：获取API格式工作流（修复json_dumps错误） =====================
+# ===================== 核心路由：获取API格式工作流（修复SSL参数错误） =====================
 @PromptServer.instance.routes.get("/api/remote_wf/get_api")
 async def get_single_workflow_api_format(request):
     """
@@ -176,7 +172,7 @@ async def get_single_workflow_api_format(request):
                 "code": 400,
                 "msg": "参数缺失：filename",
                 "data": None,
-            }, status=400, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))  # 修复
+            }, status=400, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))
 
         # 2. 安全校验文件路径
         file_path = _safe_join(USER_WORKFLOW_DIR, filename)
@@ -186,7 +182,7 @@ async def get_single_workflow_api_format(request):
                 "msg": "非法文件名：禁止访问基础目录外的文件",
                 "filename": filename,
                 "data": None,
-            }, status=403, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))  # 修复
+            }, status=403, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))
 
         # 3. 校验文件是否存在
         if not os.path.exists(file_path):
@@ -195,7 +191,7 @@ async def get_single_workflow_api_format(request):
                 "msg": "工作流文件不存在",
                 "filename": filename,
                 "data": None,
-            }, status=404, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))  # 修复
+            }, status=404, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))
 
         # 4. 读取原始工作流
         with open(file_path, "r", encoding="utf-8") as f:
@@ -205,23 +201,22 @@ async def get_single_workflow_api_format(request):
         # 5. 处理转换地址（仅接收基础IP地址，自动拼接路径）
         convert_host = request.query.get("convert_host")
         convert_url = None
-        ssl_context = None  # 仅HTTP，无需SSL
 
         # 5.1 传入了convert_host（如 http://127.0.0.1:8188）
         if convert_host:
             # 自动拼接 /workflow/convert 路径（兼容结尾带/的情况）
             convert_url = urljoin(convert_host, "/workflow/convert")
-            logger.info(f"[RemoteWorkflowPlugin] 使用外部基础地址：{convert_host} → 拼接后：{convert_url}")
+            # logger.info(f"[RemoteWorkflowPlugin] 使用外部基础地址：{convert_host} → 拼接后：{convert_url}")
 
         # 5.2 未传入则自动适配当前ComfyUI地址（默认 http://127.0.0.1:8188）
         if not convert_url:
             server_addr = PromptServer.instance.address or "127.0.0.1"
             server_port = PromptServer.instance.port or 8188
             convert_url = f"http://{server_addr}:{server_port}/workflow/convert"
-            logger.info(f"[RemoteWorkflowPlugin] 使用自动适配地址：{convert_url}")
+            # logger.info(f"[RemoteWorkflowPlugin] 使用自动适配地址：{convert_url}")
 
-        # 6. 调用转换接口（仅HTTP，简化逻辑）
-        async with ClientSession(ssl=ssl_context) as session:
+        # 6. 调用转换接口（移除SSL参数，仅HTTP）
+        async with ClientSession() as session:  # 修复：删除ssl=ssl_context参数
             async with session.post(
                 convert_url,
                 json=workflow_json,
@@ -235,7 +230,7 @@ async def get_single_workflow_api_format(request):
                         "msg": f"工作流转换失败：{error_data}",
                         "filename": filename,
                         "data": None,
-                    }, status=500, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))  # 修复
+                    }, status=500, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))
 
                 api_format_json = await resp.json()
 
@@ -246,7 +241,7 @@ async def get_single_workflow_api_format(request):
             "filename": filename,
             "convert_url_used": convert_url,
             "data": api_format_json,
-        }, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))  # 修复
+        }, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))
 
     # 异常处理（简化，适配本地HTTP场景）
     except json.JSONDecodeError as e:
@@ -256,7 +251,7 @@ async def get_single_workflow_api_format(request):
             "msg": f"JSON解析失败：{str(e)}",
             "filename": filename,
             "data": None,
-        }, status=500, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))  # 修复
+        }, status=500, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))
 
     except ClientError as e:
         logger.error(f"接口调用失败：{str(e)}")
@@ -265,7 +260,7 @@ async def get_single_workflow_api_format(request):
             "msg": f"转换接口调用失败：{str(e)}（请确认地址可访问）",
             "filename": filename,
             "data": None,
-        }, status=500, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))  # 修复
+        }, status=500, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))
 
     except PermissionError:
         logger.error(f"无权限读取文件：{filename}")
@@ -274,7 +269,7 @@ async def get_single_workflow_api_format(request):
             "msg": "无权限读取工作流文件",
             "filename": filename,
             "data": None,
-        }, status=500, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))  # 修复
+        }, status=500, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))
 
     except Exception as e:
         logger.error(f"内部错误：{str(e)}", exc_info=True)
@@ -283,7 +278,7 @@ async def get_single_workflow_api_format(request):
             "msg": f"内部错误：{str(e)}",
             "filename": filename,
             "data": None,
-        }, status=500, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))  # 修复
+        }, status=500, dumps=lambda x: json.dumps(x, ensure_ascii=False, indent=2))
 
 # 注册日志
 logger.info("Remote Workflow API endpoints registered: /api/remote_wf/list, /api/remote_wf/get, /api/remote_wf/get_api")
