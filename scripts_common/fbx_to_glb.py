@@ -38,6 +38,23 @@ class ConvertFBXToGLB:
     CATEGORY = "Common/3D"
 
     def execute(self, fbx_path, glb_path):
+        # ── 支持相对路径：优先 output，fallback input ──
+        if fbx_path and not os.path.isabs(fbx_path):
+            if COMFYUI_OUTPUT_FOLDER:
+                candidate = os.path.join(COMFYUI_OUTPUT_FOLDER, fbx_path)
+                if os.path.exists(candidate):
+                    fbx_path = candidate
+
+            if not os.path.exists(fbx_path):
+                try:
+                    import folder_paths
+                    input_folder = folder_paths.get_input_directory()
+                    candidate = os.path.join(input_folder, fbx_path)
+                    if os.path.exists(candidate):
+                        fbx_path = candidate
+                except Exception:
+                    pass
+
         if not fbx_path or not os.path.exists(fbx_path):
             raise ValueError(f"FBX file not found: {fbx_path}")
 
